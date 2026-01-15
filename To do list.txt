@@ -1,0 +1,12 @@
+Liste of all the services to implementer
+1. Service to handle the security logs
+2. Service to run the knowledge 		(knb-run-action)
+3. Service to run the requests made by the users(knb-fetch)
+4. Service for users authentication
+5. Service for bugs tracer			(knb-track-bugs)
+6. Service for file management
+7. Service for organization management  
+8. Service discovery
+9. Broker
+10.Vault service (saving password and some confidential information)
+11.Service for tchating
