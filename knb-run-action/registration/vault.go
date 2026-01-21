@@ -2,6 +2,8 @@ package registration
 
 import (
 	"errors"
+	"log"
+	"strconv"
 
 	"github.com/akristianlopez/run-action/knb-run-action/webapi"
 	"github.com/hashicorp/vault/api"
@@ -29,10 +31,14 @@ func Read(addr, token, path, key /*, role, pass*/ string) (*webapi.Db_access_par
 		// Gérer l'erreur
 		return nil, err
 	}
+	if secret == nil {
+		log.Fatal("Connection to the vault server is impossible")
+	}
 	// Accéder à la valeur
-	value := secret.Data["data"].(map[string]interface{})[key].(map[string]interface{})
+	// value := secret.Data["data"].(map[string]interface{})
+	value := secret.Data ///[key].(map[string]interface{})
 	result := &webapi.Db_access_params{}
-	if v, ok := value["login"].(string); ok {
+	if v, ok := value["userid"].(string); ok {
 		result.Userid = v
 	} else {
 		return nil, errors.New("parameter 'userid' is not defined")
@@ -42,8 +48,12 @@ func Read(addr, token, path, key /*, role, pass*/ string) (*webapi.Db_access_par
 	} else {
 		return nil, errors.New("parameter 'password' is not defined")
 	}
-	if v, ok := value["port"].(int64); ok {
-		result.Port = v
+	if v, ok := value["port"].(string); ok {
+		i, er := strconv.Atoi(v)
+		if er != nil {
+			return nil, er
+		}
+		result.Port = int64(i)
 	} else {
 		return nil, errors.New("parameter 'port' is not defined")
 	}

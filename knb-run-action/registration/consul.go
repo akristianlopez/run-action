@@ -8,10 +8,11 @@ import (
 	"github.com/hashicorp/consul/api"
 )
 
-var token string
+// var token string
 
-func Register(port int, addr, kind string) (string, error) {
+func Register(port int, addr, laddr, kind string) (string, error) {
 	config := api.DefaultConfig()
+	// config.Address = addr
 	consulClient, err := api.NewClient(config)
 	if err != nil {
 		log.Fatalf("Error when trying to create a consul client: %v", err)
@@ -27,7 +28,7 @@ func Register(port int, addr, kind string) (string, error) {
 		Port:    servicePort,
 		Address: serviceAddress,
 		Check: &api.AgentServiceCheck{
-			HTTP:                           fmt.Sprintf("https://%s:%d/health", serviceAddress, servicePort),
+			HTTP:                           fmt.Sprintf("http://%s:%d/action/health", serviceAddress, servicePort),
 			Interval:                       "10s", //Verifier toutes les 10 secondes
 			Timeout:                        "30s", //Timeout 30 secondes
 			DeregisterCriticalServiceAfter: "60s", //Se desenregistrer apres 60 secondes si le service est critique

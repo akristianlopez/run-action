@@ -55,12 +55,6 @@ func checkAction(ctx *gin.Context, s Action) {
 }
 func health(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, "OK")
-	// http.HandleFunc("/health",func(w http.ResponseWriter, r *http.Request){
-	// 	fmt.Fprintln(w,"OK")
-	// })
-	// http.HandleFunc("/",func(w http.ResponseWriter, r *http.Request){
-	// 	fmt.Fprintln(w,"OK")
-	// })
 }
 
 // func createTodo(ctx *gin.Context, s Store) {

@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	v_server_addr, reg_server_addr, mode                string
-	port, chk_interval, to_interval, q_interval, v_port int
+	v_server_addr, reg_server_addr, mode                          string
+	port, chk_interval, to_interval, q_interval, reg_port, v_port int
 )
 
 func readAppArgument(arg []string) {
@@ -24,6 +24,8 @@ func readAppArgument(arg []string) {
 	reg_server_addr = ""
 	mode = ""
 	port = 4000
+	v_port = 8200
+	reg_port = 8500
 	chk_interval = 10
 	to_interval = 30
 	q_interval = 60
@@ -34,11 +36,11 @@ func readAppArgument(arg []string) {
 		switch strings.ToLower(arg[position]) {
 		case "help", "?":
 			fmt.Println("./knb-run-action.exe -m|mode mode_value -p|port port_value -r|registry r_params -v|vault v_params")
-			fmt.Println("mode_value can be either 'action' or 'fetch'")
-			fmt.Println("port_value is an integer value >=4000")
-			fmt.Println("r_params is defined like this : \n\tserver_address servername or ip address of the server.\n\thealth _interval defines the periodical interval for checking the availability of the microservice\n\ttimeout_interval is interval of time where the microservice is supposed to response.\n\tquit_interval an lap of time where if the mocroservice does not response, the service delete it")
-			fmt.Println("v_params is just the address of the vault server")
-			fmt.Println("\tcopyright (c) 2023 ATOUBA Christian Lopez")
+			fmt.Println("\nmode_value can be either 'action' or 'fetch'")
+			fmt.Println("\nport_value is an integer value >=4000")
+			fmt.Println("\nr_params is defined like this : server_address server_port health _interval timeout_interval quit_interval\n\tserver_address: servername or ip address of the server.\n\tserver_port: is the port value \n\thealth _interval: defines the periodical interval for checking the availability of the microservice\n\ttimeout_interval: is an interval of time where the microservice is supposed to response.\n\tquit_interval: an elapsed time where if the mocroservice does not response, the registry service delete it")
+			fmt.Println("\nv_params is just the address of the vault server")
+			fmt.Println("\n\tcopyright (c) 2023 ATOUBA Christian Lopez")
 			os.Exit(0)
 		case "-m", "-mode":
 			if len(arg) > position+1 {
@@ -53,6 +55,10 @@ func readAppArgument(arg []string) {
 		case "-r", "-registry":
 			if len(arg) > position+1 {
 				reg_server_addr = arg[position+1]
+				position++
+			}
+			if len(arg) > position+1 {
+				fmt.Sscanf(arg[position+1], "%d", &reg_port)
 				position++
 			}
 			if len(arg) > position+1 {
@@ -111,6 +117,15 @@ func checkReachability(host string, port string, timeout time.Duration) bool {
 	defer conn.Close()
 	return true
 }
+func getLocalIP() net.IP {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP
+}
 func main() {
 	/*
 	   Structure de la ligne de commande
@@ -122,40 +137,51 @@ func main() {
 	   ces differentes options peuvent etre combinees.
 	*/
 	readAppArgument(os.Args)
-
-	fmt.Println("Address : ", reg_server_addr)
-	fmt.Println("Check_interval : ", chk_interval)
-	fmt.Println("Timeout_interval : ", to_interval)
-	fmt.Println("Quit_interval :", q_interval)
-	fmt.Println("Mode :", mode)
-	fmt.Println("Port :", port)
-	fmt.Println("Vault server: ", reg_server_addr)
-	fmt.Println("Vault port : ", v_port)
+	// fmt.Println("Address : ", reg_server_addr)
+	// fmt.Println("service port : ", reg_port)
+	// fmt.Println("Check_interval : ", chk_interval)
+	// fmt.Println("Timeout_interval : ", to_interval)
+	// fmt.Println("Quit_interval :", q_interval)
+	// fmt.Println("Mode :", mode)
+	// fmt.Println("Port :", port)
+	// fmt.Println("Vault server: ", reg_server_addr)
+	// fmt.Println("Vault port : ", v_port)
 
 	if !validateIP(reg_server_addr) && !validateHostname(reg_server_addr) {
-		log.Fatalf("Invalid consul server address")
+		log.Fatal("Invalid consul server address")
+	}
+	if !checkReachability(reg_server_addr, fmt.Sprintf("%d", reg_port), time.Duration(q_interval)*time.Second) {
+		log.Fatalf("Unreachable registry service 'http://%s:%d'", reg_server_addr, reg_port)
 	}
 	if !validateIP(v_server_addr) && !validateHostname(v_server_addr) {
-		log.Fatalf("Invalid vault server address")
+		log.Fatal("Invalid vault server address")
+	}
+	if !checkReachability(v_server_addr, fmt.Sprintf("%d", v_port), time.Duration(q_interval)*time.Second) {
+		log.Fatalf("Unreachable vault service 'http://%s:%d'", v_server_addr, v_port)
 	}
 	if mode == "" {
 		fmt.Println("Warning: The mode value is not defined. We're going to fetch option as default value.")
 		mode = "fetch"
 	}
 	webapi.Running_mode = mode
+	ip := getLocalIP()
 
-	token := os.Getenv("VAULT_TOKEN")
+	token := os.Getenv("WEBAPI_VAULT_TOKEN") //cubbyhole/
 	if token == "" {
-		log.Fatalf("'VAULT_TOKEN' token is not defined")
+		log.Fatal("'WEBAPI_VAULT_TOKEN' token is not defined")
 	}
-	db_par, err := registration.Read(fmt.Sprintf("%s:%d", v_server_addr, v_port), token, "secret/data", "db_access" /*"login", "password"*/)
+	db_par, err := registration.Read(fmt.Sprintf("http://%s:%d", v_server_addr, v_port), token, "cubbyhole/webservice/db_access", "db_access" /*"login", "password"*/)
+	// db_par, err := registration.Read(fmt.Sprintf("http://%s:%d", v_server_addr, v_port), token, "cubbyhole/secret/run-actions/web", "db_access" /*"login", "password"*/)
 	if err != nil {
 		log.Fatalf("Problem related to the database connection: '%s'", err.Error())
 	}
 
 	// Enregistrement du microservice dans consul
 	//os.Hostname()
-	n, _ := registration.Register(port, reg_server_addr, mode)
+	n, e := registration.Register(port, reg_server_addr, ip.String(), mode)
+	if e != nil {
+		log.Fatal(e.Error())
+	}
 	webapi.Db_connect_params = db_par
 	webapi.Start(port) //port a lire
 	// registration.Write("http://127.0.0.1:8200", token, "secret/data/ma-cle-secrete" /*"login", "password",*/, "nouvelle_valeur")
