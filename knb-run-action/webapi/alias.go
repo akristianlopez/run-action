@@ -57,6 +57,10 @@ func health(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, "OK")
 }
 
+func refresh(ctx *gin.Context) {
+	ctx.JSON(http.StatusOK, "OK")
+}
+
 // func createTodo(ctx *gin.Context, s Store) {
 // 	payload := &CreatePayload{}
 // 	if err := ctx.BindJSON(payload); err != nil {

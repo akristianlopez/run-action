@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
 	"github.com/akristianlopez/action"
@@ -122,12 +121,13 @@ func (a *Action) Check(ctx *gin.Context, req RequestData, id, table, newName str
 	//ctx context.Context, db *sql.DB, dbname string
 	return result, nil, ErrNotFound
 }
-func getEnv(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultValue
-}
+
+// func getEnv(key, defaultValue string) string {
+// 	if value, exists := os.LookupEnv(key); exists {
+// 		return value
+// 	}
+// 	return defaultValue
+// }
 
 func getConnectionString() string {
 	// Paramètres de connexion (à adapter ou mettre dans des variables d'environnement)

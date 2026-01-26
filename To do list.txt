@@ -1,12 +1,17 @@
 Liste of all the services to implementer
 1. Service to handle the security logs
 2. Service to run the knowledge 		(knb-run-action)
-3. Service to run the requests made by the users(knb-fetch)
+3. Service to run the requests made by the users(embedded in knb-run-action=>mode=fetch)
 4. Service for users authentication
 5. Service for bugs tracer			(knb-track-bugs)
 6. Service for file management
-7. Service for organization management  
-8. Service discovery
+7. Service for organization management  	(knb-run-action==>a specific implementation of knb-run-action)
+8. Service discovery (consul)
 9. Broker
-10.Vault service (saving password and some confidential information)
+10.Vault service for saving secret information (vault)
 11.Service for tchating
+12.Service de gestion des configuration des different microservices==config service. il faut utiliser un repository git
+(Domain Driven Design(DDD))
+amzib
+DTO
+----wosa/lopez==>root
