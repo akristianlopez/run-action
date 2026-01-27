@@ -10,12 +10,32 @@ import (
 	"github.com/akristianlopez/action"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/hashicorp/consul/api"
 	_ "github.com/lib/pq" // Driver PostgreSQL
 )
 
 var ErrNotFound = errors.New("not found")
 var Db_connect_params *Db_access_params
 var Running_mode string
+var ExistingService func() ([]*api.ServiceEntry, error)
+var IsServiceExists func(entries []*api.ServiceEntry, name string) *api.ServiceEntry
+
+var mocroservices []*api.ServiceEntry
+
+func serviceExists(name string) bool {
+	if ExistingService == nil || IsServiceExists == nil {
+		return false
+	}
+	if mocroservices == nil {
+		srv, err := ExistingService()
+		if err != nil {
+			log.Println(err)
+			return false
+		}
+		mocroservices = srv
+	}
+	return IsServiceExists(mocroservices, name) != nil
+}
 
 type Program interface {
 	GetInterface(req RequestData) (string, error)

@@ -124,6 +124,8 @@ func main() {
 	os.Setenv("WEBAPI_SRV_PATH", webapi.ConfigClient.Params["configuration_path"].(string))
 	os.Setenv("WEBAPI_SRV_CONFIG_ADDRESS", webapi.ConfigClient.Params["configuration_service_address"].(string))
 	os.Setenv("WEBAPI_SRV_MODE", webapi.ConfigClient.Params["service_kind"].(string))
+	webapi.ExistingService = registration.ExistingService
+	webapi.IsServiceExists = registration.IsServiceExists
 
 	conf, err := registration.ReadConfig(webapi.ConfigClient.Params["configuration_service_address"].(string), webapi.ConfigClient.Params["configuration_path"].(string))
 	if err != nil {

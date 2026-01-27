@@ -9,14 +9,6 @@ require (
 )
 
 require (
-	github.com/akristianlopez/action/ast v0.0.0-20260115192853-f1bacd94b493 // indirect
-	github.com/akristianlopez/action/lexer v0.0.0-20260115192853-f1bacd94b493 // indirect
-	github.com/akristianlopez/action/nsina v0.0.0-20260115192853-f1bacd94b493 // indirect
-	github.com/akristianlopez/action/object v0.0.0-20260115192853-f1bacd94b493 // indirect
-	github.com/akristianlopez/action/optimizer v0.0.0-20260115192853-f1bacd94b493 // indirect
-	github.com/akristianlopez/action/parser v0.0.0-20260115192853-f1bacd94b493 // indirect
-	github.com/akristianlopez/action/semantic v0.0.0-20260115192853-f1bacd94b493 // indirect
-	github.com/akristianlopez/action/token v0.0.0-20260114165322-0bd4c5c7ba95 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
@@ -30,7 +22,7 @@ require (
 )
 
 require (
-	github.com/akristianlopez/action v0.0.0-20260117210448-17fbee0cc9e7
+	github.com/akristianlopez/action v0.0.0-20260127093556-c064937a1d28
 	github.com/bytedance/sonic v1.14.0 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect

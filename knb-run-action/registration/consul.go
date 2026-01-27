@@ -1,8 +1,10 @@
 package registration
 
 import (
+	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/akristianlopez/run-action/knb-run-action/webapi"
 	"github.com/hashicorp/consul/api"
@@ -40,3 +42,47 @@ func Register(port uint64, name, addr, laddr, kind string) (string, error) {
 	}
 	return serviceName, nil
 }
+
+func ExistingService() ([]*api.ServiceEntry, error) {
+	// Get a new client
+	config := api.DefaultConfig()
+	config.Address = webapi.ConfigClient.Params["discovery_service_address"].(string) // e.g., "localhost:8500"
+	client, err := api.NewClient(config)
+	if err != nil {
+		return nil, fmt.Errorf("error creating consul client: %w", err)
+	}
+	serviceName := webapi.ConfigClient.Params["service_name"].(string)
+	// Query the health catalog for the service
+	// "passingOnly" set to true ensures we only see instances that are passing their health checks.
+	passingOnly := true
+
+	serviceEntries, _, err := client.Health().Service(serviceName, "", passingOnly, nil)
+	if err != nil {
+		// This might return an error if the service is completely unknown to Consul
+		// or if there's a network issue.
+		return nil, fmt.Errorf("error querying service health: %w", err)
+	}
+
+	// If the list of service entries is not empty, the service exists and has healthy instances.
+	if len(serviceEntries) > 0 {
+		return serviceEntries, nil
+	}
+
+	// If the list is empty, the service name might exist but have no healthy instances,
+	// or it might not exist at all (depending on specific Consul configuration/behavior).
+	// You can refine this by querying the full catalog if needed.
+	return nil, errors.New("Service not found")
+}
+func IsServiceExists(entries []*api.ServiceEntry, name string) *api.ServiceEntry {
+	if entries == nil {
+		return nil
+	}
+	for _, entry := range entries {
+		if strings.EqualFold(entry.Service.Service, name) {
+			return entry
+		}
+	}
+	return nil
+}
+
+// Get a new client
