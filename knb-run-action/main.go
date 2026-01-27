@@ -142,6 +142,7 @@ func main() {
 	webapi.Db_connect_params.Userid = conf.Database.Usrid
 	webapi.Db_connect_params.Password = ""
 	webapi.Db_connect_params.Name = conf.Database.Name
+	webapi.Db_connect_params.Kind = conf.Database.Kind
 
 	// Load consul configuration
 	webapi.ConfigClient.Params["discovery_service_address"] = conf.Consul.URL

@@ -3,6 +3,8 @@ package webapi
 import (
 	"net/http"
 
+	"github.com/akristianlopez/action/ast"
+	"github.com/akristianlopez/action/object"
 	"github.com/gin-gonic/gin"
 )
 
@@ -59,6 +61,16 @@ func health(ctx *gin.Context) {
 
 func refresh(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, "OK")
+}
+func signature(ctx *gin.Context, s Action) ([]*ast.StructField, *ast.TypeAnnotation) {
+	res := RequestData{}
+	return s.Signature(ctx, res)
+}
+func execContract(ctx *gin.Context, s Action) object.Object {
+	req := RequestData{}
+	rValue := s.ExecContract(ctx, req)
+	// ctx.JSON(http.StatusOK,RequestData)
+	return rValue
 }
 
 // func createTodo(ctx *gin.Context, s Store) {

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/akristianlopez/action"
+	"github.com/akristianlopez/action/ast"
+	"github.com/akristianlopez/action/object"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hashicorp/consul/api"
@@ -35,6 +37,15 @@ func serviceExists(name string) bool {
 		mocroservices = srv
 	}
 	return IsServiceExists(mocroservices, name) != nil
+}
+func serviceSignature(service, name string) ([]*ast.StructField, *ast.TypeAnnotation, error) {
+	if ExistingService == nil || IsServiceExists == nil {
+		return nil, nil, nil
+	}
+	// if mocroservices == nil {
+	// 	srv, err := ExistingService()
+	// }
+	return nil, nil, nil
 }
 
 type Program interface {
@@ -118,7 +129,7 @@ func (a *Action) Fetch(ctx *gin.Context, req RequestData) (*ResponseData, error)
 func (a *Action) Check(ctx *gin.Context, req RequestData, id, table, newName string) (*ResponseData, *[]string, error) {
 	result := &ResponseData{Data: make(map[string]interface{})}
 	result.Error = 0
-	db, err := sql.Open("postgres", getConnectionString())
+	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
 	if err != nil {
 		result.Error = 1
 		result.Data["Error"] = err.Error()
@@ -127,8 +138,8 @@ func (a *Action) Check(ctx *gin.Context, req RequestData, id, table, newName str
 	}
 	defer db.Close()
 	if src, ok := req.Data["source"]; ok {
-		act := action.NewAction(ctx.Request.Context(), db, "postgress")
-		ok, err := act.Check(src.(string), id, table, newName, a.secu.IsHandlabled)
+		act := action.NewAction(ctx.Request.Context(), db, Db_connect_params.Kind)
+		ok, err := act.Check(src.(string), id, table, newName, a.secu.IsHandlabled, serviceExists, serviceSignature)
 		if ok {
 			return result, nil, nil
 		}
@@ -140,6 +151,13 @@ func (a *Action) Check(ctx *gin.Context, req RequestData, id, table, newName str
 	result.Data["Error"] = ErrNotFound.Error()
 	//ctx context.Context, db *sql.DB, dbname string
 	return result, nil, ErrNotFound
+}
+
+func (a *Action) Signature(ctx *gin.Context, req RequestData) ([]*ast.StructField, *ast.TypeAnnotation) {
+	return nil, nil
+}
+func (a *Action) ExecContract(ctx *gin.Context, req RequestData) object.Object {
+	return nil
 }
 
 // func getEnv(key, defaultValue string) string {

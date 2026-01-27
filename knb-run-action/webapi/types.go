@@ -18,6 +18,7 @@ type Db_access_params struct {
 	Port     int64
 	Address  string
 	Name     string
+	Kind     string
 }
 type Config struct {
 	Database struct {
@@ -25,7 +26,7 @@ type Config struct {
 		Port    int    `yaml:"port" json:"port"`
 		Usrid   string `yaml:"username" json:"username"`
 		Name    string `yaml:"database" json:"database"`
-		// Password string `yaml:"password" json:"password"`
+		Kind    string `yaml:"kind" json:"kind"`
 	} `yaml:"database" json:"database"`
 	Kafka struct {
 		Brokers []BrokerInfo `yaml:"brokers" json:"brokers"`
