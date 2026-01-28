@@ -10,4 +10,6 @@ func addRoutes(r *gin.Engine, act Action) {
 	api.GET("/fetch", func(ctx *gin.Context) { fetchAction(ctx, act) })
 	api.GET("/ping", func(ctx *gin.Context) { health(ctx) })
 	api.GET("/config", func(ctx *gin.Context) { refresh(ctx) })
+	api.GET("/contract", func(ctx *gin.Context) { signature(ctx, act) })
+	api.POST("/contract", func(ctx *gin.Context) { execContract(ctx, act) })
 }

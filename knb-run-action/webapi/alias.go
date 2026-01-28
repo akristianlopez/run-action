@@ -1,9 +1,12 @@
 package webapi
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 
-	"github.com/akristianlopez/action/ast"
 	"github.com/akristianlopez/action/object"
 	"github.com/gin-gonic/gin"
 )
@@ -62,56 +65,97 @@ func health(ctx *gin.Context) {
 func refresh(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, "OK")
 }
-func signature(ctx *gin.Context, s Action) ([]*ast.StructField, *ast.TypeAnnotation) {
-	res := RequestData{}
-	return s.Signature(ctx, res)
+func signature(ctx *gin.Context, s Action) {
+	// Get the contract signature
+	req := &RequestData{}
+	if err := ctx.BindJSON(req); err != nil {
+		ctx.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, s.Signature(ctx, *req))
 }
-func execContract(ctx *gin.Context, s Action) object.Object {
-	req := RequestData{}
-	rValue := s.ExecContract(ctx, req)
-	// ctx.JSON(http.StatusOK,RequestData)
-	return rValue
+func execContract(ctx *gin.Context, s Action) {
+	req := &RequestData{}
+	req.Data = make(map[string]interface{})
+	req.Data["service"] = ctx.Params[0].Value
+	req.Data["contract"] = ctx.Params[1].Value
+	req.Proc = ctx.Params[2].Value
+	req.Knowledge = ctx.Params[3].Value
+	req.Role = ctx.Params[4].Value
+	rValue, ok := s.ExecContract(ctx, *req)
+	resp := ResponseData{Error: 0, Data: make(map[string]interface{})}
+	if !ok {
+		resp.Error = 1
+		resp.Data["msg"] = rValue.Inspect()
+	}
+	resp.Data["result"] = rValue
+	ctx.JSON(http.StatusOK, resp)
 }
+func newError(format string, a ...interface{}) *object.Error {
+	return &object.Error{Message: fmt.Sprintf(format, a...)}
+}
+func send2Eval(ctx *gin.Context, url string, data RequestData) object.Object {
+	select {
+	case <-ctx.Done():
+		return newError("Request cancelled by client")
+	default:
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			return newError("Error encoding JSON: %v", err)
+		}
+		resp, err := http.Post(fmt.Sprintf("http://%s", url), "application/json",
+			bytes.NewBuffer(jsonData))
+		if err != nil {
+			return newError("Error sending request: %v", err)
+		}
+		defer resp.Body.Close()
 
-// func createTodo(ctx *gin.Context, s Store) {
-// 	payload := &CreatePayload{}
-// 	if err := ctx.BindJSON(payload); err != nil {
-// 		ctx.AbortWithError(http.StatusBadRequest, err)
-// 		return
-// 	}
+		// Read response
+		res, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return newError("Error reading response: %v", err)
+		}
+		var responseData ResponseData
+		err = json.Unmarshal(res, &responseData)
+		if err != nil {
+			return newError("Error decoding JSON response: %v", err)
+		}
+		if responseData.Error != 0 {
+			return newError("Error from eval server: %v", responseData.Data["msg"])
+		}
+		if val, ok := responseData.Data["result"]; ok {
+			return val.(object.Object)
+		}
+		return object.NULL
+	}
+}
+func send2getSignature(ctx *gin.Context, url string) (*ResponseData, error) {
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("Request cancelled by client")
+	default:
+		resp, err := http.Get(fmt.Sprintf("http://%s", url))
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
 
-// 	ctx.JSON(http.StatusOK, CreateResponse{
-// 		Todo: s.Create(payload.Description),
-// 	})
-// }
-
-// func deleteTodo(ctx *gin.Context, s Store) {
-// 	id := ctx.Param("id")
-// 	s.Delete(id)
-// }
-
-// func checkTodo(ctx *gin.Context, s Store) {
-// 	id := ctx.Param("id")
-
-// 	payload := &CheckPayload{}
-// 	if err := ctx.BindJSON(payload); err != nil {
-// 		ctx.AbortWithError(http.StatusBadRequest, err)
-// 		return
-// 	}
-
-// 	t, err := s.Check(id, payload.Completed)
-// 	if err != nil {
-// 		ctx.AbortWithError(http.StatusNotFound, err)
-// 		return
-// 	}
-
-// 	ctx.JSON(http.StatusOK, CheckResponse{
-// 		Todo: t,
-// 	})
-// }
-
-// func listTodos(ctx *gin.Context, s Store) {
-// 	ctx.JSON(http.StatusOK, ListResponse{
-// 		Todos: s.List(),
-// 	})
-// }
+		// Read response
+		res, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		var responseData ResponseData
+		err = json.Unmarshal(res, &responseData)
+		if err != nil {
+			return nil, err
+		}
+		if responseData.Error != 0 {
+			return nil, fmt.Errorf("Error from eval server: %v", responseData.Data["msg"])
+		}
+		if val, ok := responseData.Data["signature"]; ok {
+			return val.(*ResponseData), nil
+		}
+		return nil, fmt.Errorf("Error from eval server: %v", responseData.Data["msg"])
+	}
+}
