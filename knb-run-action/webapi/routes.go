@@ -11,5 +11,5 @@ func addRoutes(r *gin.Engine, act Action) {
 	api.GET("/ping", func(ctx *gin.Context) { health(ctx) })
 	api.GET("/config", func(ctx *gin.Context) { refresh(ctx) })
 	api.GET("/contract", func(ctx *gin.Context) { signature(ctx, act) })
-	api.POST("/contract", func(ctx *gin.Context) { execContract(ctx, act) })
+	api.POST("/contract/:service/:name/:proc/:goal/:role", func(ctx *gin.Context) { execContract(ctx, act) })
 }
