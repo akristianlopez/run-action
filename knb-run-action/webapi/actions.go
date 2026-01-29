@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/akristianlopez/action"
@@ -25,6 +27,7 @@ var Running_mode string
 var ExistingService func() ([]*api.ServiceEntry, error)
 var IsServiceExists func(entries []*api.ServiceEntry, name string) *api.ServiceEntry
 var ExtContext *gin.Context
+var rw sync.RWMutex
 
 var microservices []*api.ServiceEntry
 
@@ -91,17 +94,197 @@ type Claims struct {
 }
 
 type security struct {
-	claims *Claims
+	claims   *Claims
+	filter   map[string]ast.Expression
+	excluded map[string]bool
+	context  map[string]map[string][]string
 }
 
-func (sec *security) IsHandlabled(table, field, operation string) (bool, string) {
-	return true, ""
+func (sec *security) IsHandlabledField(ctx *gin.Context, table, field string) bool {
+	req := &RequestData{}
+	if err := ctx.BindJSON(req); err != nil {
+		return false
+	}
+	rw.RLock()
+	defer rw.RUnlock()
+	if _, ok := sec.excluded[strings.ToLower(fmt.Sprintf("%s.%s.%s.%s.%s", req.Role, req.Proc, req.Knowledge, table, field))]; ok {
+		return false
+	}
+	return true
 }
-func (sec *security) hasFilter(table string) bool {
+func (sec *security) IsHandlabled(ctx *gin.Context, table, field, operation string) (bool, string) {
+	req := &RequestData{}
+	if err := ctx.BindJSON(req); err != nil {
+		return false, ""
+	}
+	if sec.IsHandlabledField(ctx, table, field) {
+		rw.RLock()
+		defer rw.RUnlock()
+		if val, ok := sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", req.Role, req.Proc, req.Knowledge))]; ok {
+			if array, ok := val[strings.ToLower(table)]; ok {
+				for _, v := range array {
+					if strings.EqualFold(v, operation) {
+						return true, ""
+					}
+				}
+			}
+		}
+		return false, ""
+	}
+	return false, ""
+}
+func (sec *security) hasFilter(ctx *gin.Context, table string) bool {
+	req := &RequestData{}
+	if err := ctx.BindJSON(req); err != nil {
+		return false
+	}
+	rw.RLock()
+	defer rw.RUnlock()
+	if _, ok := sec.filter[strings.ToLower(fmt.Sprintf("%s.%s.%s.%s", req.Role, req.Proc, req.Knowledge, table))]; ok {
+		return true
+	}
 	return false
 }
-func (sec *security) getFilter(table, newName string) (ast.Expression, bool) {
+func (sec *security) replace(expr ast.Expression, table, newName string) ast.Expression {
+	switch val := expr.(type) {
+	case *ast.TypeMember:
+		if v, ok := val.Left.(*ast.Identifier); ok {
+			if strings.EqualFold(v.Value, table) {
+				return &ast.TypeMember{
+					Left:  &ast.Identifier{Token: v.Token, Value: newName},
+					Right: sec.replace(val.Right, table, newName),
+				}
+			}
+		}
+		return &ast.TypeMember{
+			Left:  sec.replace(val.Left, table, newName),
+			Right: sec.replace(val.Right, table, newName),
+		}
+	case *ast.InfixExpression:
+		return &ast.InfixExpression{
+			Left:     sec.replace(val.Left, table, newName),
+			Operator: val.Operator,
+			Right:    sec.replace(val.Right, table, newName),
+		}
+	case *ast.PrefixExpression:
+		return &ast.PrefixExpression{
+			Operator: val.Operator,
+			Right:    sec.replace(val.Right, table, newName),
+		}
+	default:
+		return expr
+	}
+}
+func (sec *security) getFilter(ctx *gin.Context, table, newName string) (ast.Expression, bool) {
+	req := &RequestData{}
+	if err := ctx.BindJSON(req); err != nil {
+		return nil, false
+	}
+	rw.RLock()
+	defer rw.RUnlock()
+	if val, ok := sec.filter[strings.ToLower(fmt.Sprintf("%s.%s.%s.%s", req.Role, req.Proc, req.Knowledge, table))]; ok {
+		if newName == "" {
+			return val, true
+		}
+		return sec.replace(val, table, newName), true
+	}
 	return nil, false
+}
+func (sec *security) removeDuplicates(input []string) []string {
+	sort.Strings(input)
+	seen := make(map[string]bool) // Tracks seen strings
+	result := []string{}
+
+	for _, val := range input {
+		if _, exists := seen[val]; !exists {
+			seen[val] = true
+			result = append(result, val)
+		}
+	}
+	return result
+}
+
+func (sec *security) load() (bool, error) {
+	// loading of the context
+	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
+	act := action.NewAction(nil, db, Db_connect_params.Kind)
+
+	if err != nil {
+		return false, fmt.Errorf("Nsina: Error when trying to retrieve the action from the database : %v", err)
+	}
+	defer db.Close()
+	rows, err := db.Query("SELECT P.ROLE,C.PROC,C.GOAL,C.OBJECT,C.TRANS FROM CONTEXT C INNER JOIN PROCESS P ON (P.CODE== C.PROC)")
+	if err != nil {
+		return false, err
+	}
+	var role, proc, goal, object, trans string
+	for rows.Next() {
+		err = rows.Scan(&role, &proc, &goal, &object, &trans)
+		if err != nil {
+			return false, err
+		}
+		if _, ok := sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))]; !ok {
+			sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))] = make(map[string][]string)
+		}
+		if _, ok := sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))][strings.ToLower(object)]; !ok {
+			sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))][strings.ToLower(object)] = make([]string, 0)
+		}
+		rw.Lock()
+		sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))][strings.ToLower(object)] = append(sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))][strings.ToLower(object)], trans)
+		rw.Unlock()
+	}
+
+	for key := range sec.context {
+		rw.Lock()
+		for name := range sec.context[key] {
+			sec.context[key][name] = sec.removeDuplicates(sec.context[key][name])
+		}
+		rw.Unlock()
+	}
+
+	// load filter
+	rows, err = db.Query("SELECT P.ROLE, F.PROC, F.GOAL, F.OBJECT, F.EXPRESSSION FROM FILTER F INNER JOIN PROCESS P ON (P.CODE== F.PROC)")
+	if err != nil {
+		return false, err
+	}
+	sec.filter = make(map[string]ast.Expression)
+	for rows.Next() {
+		err = rows.Scan(&role, &proc, &goal, &object, &trans)
+		if err != nil {
+			return false, err
+		}
+		expr, erList := act.Expression(trans, object, "", sec.IsHandlabled)
+		if len(erList) > 0 {
+			// sec.filter[strings.ToLower(strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal)))] = nil
+			continue
+		}
+		if _, ok := sec.filter[strings.ToLower(strings.ToLower(fmt.Sprintf("%s.%s.%s.%s", role, proc, goal, object)))]; !ok {
+			rw.Lock()
+			sec.filter[strings.ToLower(strings.ToLower(fmt.Sprintf("%s.%s.%s.%s", role, proc, goal, object)))] = expr
+			rw.Unlock()
+			continue
+		}
+	}
+
+	// loading of excluded fields
+	rows, err = db.Query("SELECT P.ROLE, E.PROC, E.GOAL, E.OBJECT, E.FIELD FROM EXCLUDED E INNER JOIN PROCESS P ON (P.CODE== E.PROC)")
+	if err != nil {
+		return false, err
+	}
+	sec.excluded = make(map[string]bool)
+	for rows.Next() {
+		err = rows.Scan(&role, &proc, &goal, &object, &trans)
+		if err != nil {
+			continue
+		}
+		if _, ok := sec.excluded[strings.ToLower(strings.ToLower(fmt.Sprintf("%s.%s.%s.%s", role, proc, goal, object)))]; !ok {
+			rw.Lock()
+			sec.excluded[strings.ToLower(strings.ToLower(fmt.Sprintf("%s.%s.%s.%s", role, proc, goal, object)))] = true
+			rw.Unlock()
+			continue
+		}
+	}
+	return true, nil
 }
 
 type Signatures struct {
@@ -113,16 +296,19 @@ type Action struct {
 	contracts  map[string]*ast.Action
 	signatures map[string]*Signatures
 	action     map[string]map[string]map[string]*ast.Action
+	knb        map[string]bool
 	screen     map[string]map[string]map[string]string
 }
 
 func newAction() *Action {
 	s := &Action{
+		secu:       &security{},
 		contracts:  make(map[string]*ast.Action),
 		signatures: make(map[string]*Signatures),
 		action:     make(map[string]map[string]map[string]*ast.Action),
 		screen:     make(map[string]map[string]map[string]string),
 	}
+	s.secu.load()
 	return s
 }
 func (a *Action) getSecretKey() (*[]byte, error) {
@@ -156,10 +342,12 @@ func (a *Action) FillToken(ctx *gin.Context) (bool, error) {
 	}
 	return false, errors.New("Invalid token")
 }
+
 func (a *Action) fillSecurity(ctx *gin.Context) (string, error) {
 	// a.secu = &security{}
 	return "", nil
 }
+
 func (a *Action) IsTokenValid(tok, key string) (bool, error) {
 	return true, nil
 }
@@ -218,11 +406,12 @@ func (a *Action) Run(ctx *gin.Context, req RequestData) (*ResponseData, error) {
 				serviceExists, serviceSignature, a.eval)
 			return &ResponseData{Error: 0, Data: map[string]interface{}{"result": val}}, nil
 		}
-		qry := fmt.Sprintf(`Action "execute a query"()\n start RETURN SELECT ACTION.ACTION 
+		qry := fmt.Sprintf(`Action "execute a query"()\n start RETURN SELECT ACTION.ACTION,KNOWLEDGE.REFRESHABLE
 				FROM KNOWLEDGE INNER JOIN ACTION ON (KNOWLEDGE.GOAL=ACTION.GOAL AND KNOWLEDGE.PROC=ACTION.PROC)
 					INNER JOIN PROCESS ON (PROCESS.CODE==KNOWLEDGE.PROC)
 				WHERE (KNOWLEDGE.GOAL=='%s' AND KNOWLEDGE.PROC=='%s' AND PROCESS.ROLE=='%s')\nstop`,
 			req.Knowledge, req.Proc, req.Role)
+		flag := 0
 		val, erro := act.Interpret(qry, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
 			serviceExists, serviceSignature, a.eval)
 		if erro != nil {
@@ -233,7 +422,7 @@ func (a *Action) Run(ctx *gin.Context, req RequestData) (*ResponseData, error) {
 		}
 		if rows, ok := val.(*object.SQLResult); ok {
 			for rows.Rows.Next() {
-				rows.Rows.Scan(&qry)
+				rows.Rows.Scan(&qry, &flag)
 			}
 			if _, ok := a.action[strings.ToLower(req.Role)]; !ok {
 				a.action[strings.ToLower(req.Role)] = make(map[string]map[string]*ast.Action)
@@ -241,9 +430,12 @@ func (a *Action) Run(ctx *gin.Context, req RequestData) (*ResponseData, error) {
 			if _, ok := a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)]; !ok {
 				a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)] = make(map[string]*ast.Action)
 			}
+			a.knb[strings.ToLower(fmt.Sprintf("%s.%s", req.Proc, req.Knowledge))] = flag > 0
 			val, erro = act.Interpret(qry, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
 				serviceExists, serviceSignature, a.eval)
-
+			if flag > 0 {
+				go a.secu.load()
+			}
 			if erro != nil {
 				return &ResponseData{}, fmt.Errorf("Too many errors occured while trying to interpret the action of '%s' from '%s'", req.Knowledge, req.Proc)
 			}
@@ -606,4 +798,8 @@ func getJwt(ctx *gin.Context) (string, error) {
 	tokenString = parts[1]
 
 	return tokenString, nil
+}
+func HandleBrokerMessage(data []byte) bool {
+	log.Printf("Message recu : %s", string(data))
+	return true
 }

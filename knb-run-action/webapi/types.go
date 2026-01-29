@@ -28,7 +28,7 @@ type Config struct {
 		Name    string `yaml:"database" json:"database"`
 		Kind    string `yaml:"kind" json:"kind"`
 	} `yaml:"database" json:"database"`
-	Kafka struct {
+	Nats struct {
 		Brokers []BrokerInfo `yaml:"brokers" json:"brokers"`
 	} `yaml:"kafka" json:"kafka"`
 	Vault struct {
