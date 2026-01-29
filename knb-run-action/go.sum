@@ -1,6 +1,6 @@
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
-github.com/akristianlopez/action v0.0.0-20260128181515-8c6f346ded9e h1:DRi1zA4ObMiY5wSYpapaAdin+WYvSOoj/qe6g/qmwcg=
-github.com/akristianlopez/action v0.0.0-20260128181515-8c6f346ded9e/go.mod h1:oEyN1Jzq7mXXmNllJHk3kcgiQ4ZvZ5EQNkRiJJ8bfg8=
+github.com/akristianlopez/action v0.0.0-20260129091345-a2695cd925fc h1:ueiw5zF92apbGYeHrmpI6JvzeTcc4wv/wbq9VfifJcg=
+github.com/akristianlopez/action v0.0.0-20260129091345-a2695cd925fc/go.mod h1:oEyN1Jzq7mXXmNllJHk3kcgiQ4ZvZ5EQNkRiJJ8bfg8=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
 github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
 github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf/go.mod h1:ybxpYRFXyAe+OPACYpWeL0wqObRcbAqCMya13uyzqw0=

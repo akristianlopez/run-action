@@ -58,7 +58,9 @@ func fetchAction(ctx *gin.Context, s Action) {
 			return
 		}
 		res, _ := s.Fetch(ctx, *payload)
-		ctx.JSON(http.StatusOK, res)
+		if res != nil {
+			ctx.JSON(http.StatusOK, res)
+		}
 	}
 }
 func checkAction(ctx *gin.Context, s Action) {
@@ -92,10 +94,12 @@ func signature(ctx *gin.Context, s Action) {
 	default:
 		// Get the contract signature
 		req := &RequestData{}
-		if err := ctx.BindJSON(req); err != nil {
-			ctx.AbortWithError(http.StatusBadRequest, err)
-			return
-		}
+		req.Data = make(map[string]interface{})
+		req.Data["service"] = ctx.Param("service")
+		req.Data["contract"] = ctx.Param("name")
+		req.Proc = ctx.Param("proc")
+		req.Knowledge = ctx.Param("goal")
+		req.Role = ctx.Param("role")
 		ctx.JSON(http.StatusOK, s.Signature(ctx, *req))
 	}
 }
@@ -105,12 +109,10 @@ func execContract(ctx *gin.Context, s Action) {
 		return
 	default:
 		req := &RequestData{}
-		req.Data = make(map[string]interface{})
-		req.Data["service"] = ctx.Param("service")
-		req.Data["contract"] = ctx.Param("name")
-		req.Proc = ctx.Param("proc")
-		req.Knowledge = ctx.Param("goal")
-		req.Role = ctx.Param("role")
+		if err := ctx.BindJSON(req); err != nil {
+			ctx.AbortWithError(http.StatusBadRequest, err)
+			return
+		}
 		rValue, ok := s.ExecContract(ctx, *req)
 		resp := ResponseData{Error: 0, Data: make(map[string]interface{})}
 		if !ok {

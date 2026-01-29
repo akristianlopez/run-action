@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -103,12 +104,25 @@ func (sec *security) getFilter(table, newName string) (ast.Expression, bool) {
 	return nil, false
 }
 
+type Signatures struct {
+	args    []*ast.StructField
+	retType *ast.TypeAnnotation
+}
 type Action struct {
-	secu *security
+	secu       *security
+	contracts  map[string]*ast.Action
+	signatures map[string]*Signatures
+	action     map[string]map[string]map[string]*ast.Action
+	screen     map[string]map[string]map[string]string
 }
 
 func newAction() *Action {
-	s := &Action{}
+	s := &Action{
+		contracts:  make(map[string]*ast.Action),
+		signatures: make(map[string]*Signatures),
+		action:     make(map[string]map[string]map[string]*ast.Action),
+		screen:     make(map[string]map[string]map[string]string),
+	}
 	return s
 }
 func (a *Action) getSecretKey() (*[]byte, error) {
@@ -150,14 +164,176 @@ func (a *Action) IsTokenValid(tok, key string) (bool, error) {
 	return true, nil
 }
 func (a *Action) GetInterface(ctx *gin.Context, req RequestData) (string, error) {
-	return "", nil
+	if qry, ok := a.screen[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)]; !ok {
+		return qry, nil
+	}
+	qry := fmt.Sprintf(`Action "execute a query"()\n start RETURN SELECT ACTION.SCREEN 
+			FROM KNOWLEDGE INNER JOIN ACTION ON (KNOWLEDGE.GOAL=ACTION.GOAL AND KNOWLEDGE.PROC=ACTION.PROC)
+				INNER JOIN PROCESS ON (PROCESS.CODE==KNOWLEDGE.PROC)
+			WHERE (KNOWLEDGE.GOAL=='%s' AND KNOWLEDGE.PROC=='%s' AND PROCESS.ROLE=='%s')\nstop`,
+		req.Knowledge, req.Proc, req.Role)
+	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
+	if err != nil {
+		return "", fmt.Errorf("Nsina: Error when trying to retrieve the screen from the database : %v", err)
+	}
+	defer db.Close()
+	act := action.NewAction(ctx, db, Db_connect_params.Kind)
+	val, erro := act.Interpret(qry, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
+		serviceExists, serviceSignature, a.eval)
+	if erro != nil {
+		return "", err
+	}
+	if val == object.NULL {
+		return "", ErrNotFound
+	}
+	if rows, ok := val.(*object.SQLResult); ok {
+		for rows.Rows.Next() {
+			rows.Rows.Scan(&qry)
+		}
+		if _, ok := a.screen[strings.ToLower(req.Role)]; !ok {
+			a.screen[strings.ToLower(req.Role)] = make(map[string]map[string]string)
+		}
+		if _, ok := a.screen[strings.ToLower(req.Role)][strings.ToLower(req.Proc)]; !ok {
+			a.screen[strings.ToLower(req.Role)][strings.ToLower(req.Proc)] = make(map[string]string)
+		}
+		if _, ok := a.screen[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)]; !ok {
+			a.screen[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)] = qry
+		}
+		return qry, nil
+	}
+	return "", ErrNotFound
 }
 func (a *Action) Run(ctx *gin.Context, req RequestData) (*ResponseData, error) {
-	return &ResponseData{}, nil
+	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
+	if err != nil {
+		return &ResponseData{}, fmt.Errorf("Nsina: Error when trying to retrieve the action from the database : %v", err)
+	}
+	defer db.Close()
+	if ar, ok := req.Data["arguments"]; ok {
+		args := (ar.(map[string]interface{}))[req.Data["service"].(string)].(map[string]interface{})[req.Data["contract"].(string)].(map[string]object.Object)
+		act := action.NewAction(ctx, db, Db_connect_params.Kind)
+		if prog, ok := a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)]; !ok {
+			// Execute prog
+			val := act.Execute(prog, a.secu.hasFilter, a.secu.getFilter, args, true, true,
+				serviceExists, serviceSignature, a.eval)
+			return &ResponseData{Error: 0, Data: map[string]interface{}{"result": val}}, nil
+		}
+		qry := fmt.Sprintf(`Action "execute a query"()\n start RETURN SELECT ACTION.ACTION 
+				FROM KNOWLEDGE INNER JOIN ACTION ON (KNOWLEDGE.GOAL=ACTION.GOAL AND KNOWLEDGE.PROC=ACTION.PROC)
+					INNER JOIN PROCESS ON (PROCESS.CODE==KNOWLEDGE.PROC)
+				WHERE (KNOWLEDGE.GOAL=='%s' AND KNOWLEDGE.PROC=='%s' AND PROCESS.ROLE=='%s')\nstop`,
+			req.Knowledge, req.Proc, req.Role)
+		val, erro := act.Interpret(qry, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
+			serviceExists, serviceSignature, a.eval)
+		if erro != nil {
+			return &ResponseData{}, err
+		}
+		if val == object.NULL {
+			return &ResponseData{}, ErrNotFound
+		}
+		if rows, ok := val.(*object.SQLResult); ok {
+			for rows.Rows.Next() {
+				rows.Rows.Scan(&qry)
+			}
+			if _, ok := a.action[strings.ToLower(req.Role)]; !ok {
+				a.action[strings.ToLower(req.Role)] = make(map[string]map[string]*ast.Action)
+			}
+			if _, ok := a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)]; !ok {
+				a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)] = make(map[string]*ast.Action)
+			}
+			val, erro = act.Interpret(qry, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
+				serviceExists, serviceSignature, a.eval)
+
+			if erro != nil {
+				return &ResponseData{}, fmt.Errorf("Too many errors occured while trying to interpret the action of '%s' from '%s'", req.Knowledge, req.Proc)
+			}
+			if _, ok := a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)]; !ok {
+				prog, _ := act.Generate(qry, a.secu.IsHandlabled, serviceExists, serviceSignature)
+				a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)] = prog
+			}
+			return &ResponseData{Error: 0, Data: map[string]interface{}{"result": val}}, nil
+		}
+	}
+	return &ResponseData{}, ErrNotFound
 }
 func (a *Action) Fetch(ctx *gin.Context, req RequestData) (*ResponseData, error) {
+	if qry, ok := req.Data["query"]; ok {
+		src := fmt.Sprintf(`Action "execute a query"()\n start RETURN %s)\nstop`, qry.(string))
+		db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
+		if err != nil {
+			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": fmt.Errorf("Nsina: Error when trying to retrieve the screen from the database : %v", err.Error())}},
+				fmt.Errorf("Nsina: Error when trying to retrieve the screen from the database : %v", err)
+		}
+		defer db.Close()
+		act := action.NewAction(ctx, db, Db_connect_params.Kind)
+		val, erro := act.Interpret(src, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
+			serviceExists, serviceSignature, a.eval)
+		if erro != nil {
+			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": "Too many errors occured while trying to retrieve the query data"}}, errors.New("Too many errors occured while trying to retrieve the query data")
+		}
+		if val == object.NULL {
+			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": ErrNotFound.Error()}}, ErrNotFound
+		}
+		if rows, ok := val.(*object.SQLResult); ok {
+			_, err1 := rows.Rows.Columns()
+			cols, err2 := rows.Rows.ColumnTypes()
+			if err1 != nil {
+				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": fmt.Sprintf("Nsina; %s", err1.Error())}}, fmt.Errorf("Nsina; %s", err1.Error())
+			}
+			if err2 != nil {
 
-	return &ResponseData{}, nil
+				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": fmt.Sprintf("Nsina; %s", err2.Error())}}, fmt.Errorf("Nsina; %s", err2.Error())
+			}
+
+			flusher, ok := ctx.Writer.(http.Flusher)
+			if ok {
+				ctx.Writer.Header().Set("Content-Type", "text/event-stream")
+				ctx.Writer.Header().Set("Cache-Control", "no-cache")
+				ctx.Writer.Header().Set("Connection", "keep-alive")
+				ctx.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+				ctx.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+				for rows.Rows.Next() {
+					args := make([]any, 0)
+					for k := range rows.Columns {
+						args = append(args, act.GetDefaultSQLValueAddress(cols[k].DatabaseTypeName()))
+					}
+					rows.Rows.Scan(args...)
+					row := make(map[string]interface{})
+					for k, val := range args {
+						row[rows.Columns[k]] = val
+					}
+					data, err := json.Marshal(row)
+					if err != nil {
+						log.Println("Error encoding JSON:", err)
+						continue
+					}
+					// Write JSON followed by newline for easy parsing
+					fmt.Fprintf(ctx.Writer, "%s\n", data)
+					// Flush to send immediately
+					flusher.Flush()
+				}
+				// Optionally send a completion message
+				fmt.Fprintln(ctx.Writer, `{"status":"done"}`)
+				flusher.Flush()
+				return nil, nil
+			}
+			resp := &ResponseData{Error: 0, Data: map[string]interface{}{"result": make([]map[string]interface{}, 0)}}
+			for rows.Rows.Next() {
+				args := make([]any, 0)
+				for k := range rows.Columns {
+					args = append(args, act.GetDefaultSQLValueAddress(cols[k].DatabaseTypeName()))
+				}
+				rows.Rows.Scan(args...)
+				row := make(map[string]interface{})
+				for k, val := range args {
+					row[rows.Columns[k]] = val
+				}
+				resp.Data["result"] = append(resp.Data["result"].([]map[string]interface{}), row)
+			}
+			return resp, nil
+		}
+	}
+	return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": "Query not found"}}, ErrNotFound
 }
 func (a *Action) Check(ctx *gin.Context, req RequestData, id, table, newName string) (*ResponseData, *[]string, error) {
 	result := &ResponseData{Data: make(map[string]interface{})}
@@ -273,8 +449,22 @@ func (a *Action) Signature(ctx *gin.Context, req RequestData) ResponseData {
 			return resp
 		}
 		contract := req.Data["contract"].(string) // name of the public contract
+		if sign, ok := a.signatures[contract]; ok {
+			jsData, err := json.MarshalNoEscape(sign.args)
+			if err == nil {
+				resp.Data["arguments"] = jsData
+				jsData, err = json.MarshalNoEscape(sign.retType)
+				if err != nil {
+					resp.Error = 1
+					resp.Data["msg"] = err.Error()
+					resp.Data["errors"] = ""
+					return resp
+				}
+				resp.Data["returnType"] = jsData
+				return resp
+			}
+		}
 		args, ret, chk, err := a.getSignature(ctx, req.Proc, req.Knowledge, req.Role, service, contract)
-
 		if err != nil {
 			resp.Error = 1
 			resp.Data["msg"] = err.Error()
@@ -313,6 +503,7 @@ func (a *Action) Signature(ctx *gin.Context, req RequestData) ResponseData {
 			return resp
 		}
 		resp.Data["returnType"] = jsData
+		a.signatures[contract] = &Signatures{args: args, retType: ret}
 		return resp
 	}
 }
@@ -360,11 +551,7 @@ func (a *Action) eval(ctx *gin.Context, srv, name string, args map[string]object
 	return newError("Invalid microservice name '%s'", srv), false
 }
 func (a *Action) ExecContract(ctx *gin.Context, req RequestData) (object.Object, bool) {
-	str := fmt.Sprintf(`Action "execute a query"()\n start RETURN SELECT RULE.ACTION
-			  FROM CONTRACT INNER JOIN RULE ON (CONTRACT.GOAL=RULE.GOAL AND CONTRACT.PROC=RULE.PROC)
-			  		INNER JOIN PROCESS ON (PROCESS.CODE==RULE.PROC)
-			  WHERE (CONTRACT.NAME=='%s' And CONTRACT.PROC=='%s' And CONTRACT.GOAL=='%s' And PROCESS.ROLE=='%s')\n stop`,
-		req.Data["contract"], req.Proc, req.Knowledge, req.Role)
+	// TODO: Taking into account the storage action
 	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
 	if err != nil {
 		return newError("Error : %v", err.Error()), false
@@ -372,20 +559,23 @@ func (a *Action) ExecContract(ctx *gin.Context, req RequestData) (object.Object,
 	defer db.Close()
 	if ar, ok := req.Data["arguments"]; ok {
 		args := (ar.(map[string]interface{}))[req.Data["service"].(string)].(map[string]interface{})[req.Data["contract"].(string)].(map[string]object.Object)
-		// args := make(map[string]object.Object)
-		// err = json.Unmarshal([]byte(ar.(string)), &args)
-		// if err != nil {
-		// 	return newError("Error : %v", err.Error()), false
-		// }
 		act := action.NewAction(ctx, db, Db_connect_params.Kind)
+		if prog, ok := a.contracts[req.Data["contract"].(string)]; ok {
+			return act.Execute(prog, a.secu.hasFilter, a.secu.getFilter, args, true, false,
+				serviceExists, serviceSignature, a.eval), true
+		}
+		str := fmt.Sprintf(`Action "execute a query"()\n start RETURN SELECT RULE.ACTION
+				FROM CONTRACT INNER JOIN RULE ON (CONTRACT.GOAL=RULE.GOAL AND CONTRACT.PROC=RULE.PROC)
+						INNER JOIN PROCESS ON (PROCESS.CODE==RULE.PROC)
+				WHERE (CONTRACT.NAME=='%s' And CONTRACT.PROC=='%s' And CONTRACT.GOAL=='%s' And PROCESS.ROLE=='%s')\n stop`,
+			req.Data["contract"], req.Proc, req.Knowledge, req.Role)
 		val, err := act.Interpret(str, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, args, true, false,
 			serviceExists, serviceSignature, a.eval)
 		if len(err) > 0 {
 			return newError("Too many errors occured while interpreting the contract '%s'", req.Data["contract"]), false
 		}
-		if val == object.NULL {
-			return newError("The contract '%s' doesn't exist", req.Data["contract"]), false
-		}
+		prog, _ := act.Generate(str, a.secu.IsHandlabled, serviceExists, serviceSignature)
+		a.contracts[req.Data["contract"].(string)] = prog
 		return val, true
 	}
 	return object.NULL, false
