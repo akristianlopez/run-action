@@ -1,11 +1,14 @@
 package webapi
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
 	"log"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"sort"
 	"strings"
 	"sync"
@@ -28,8 +31,10 @@ var ExistingService func() ([]*api.ServiceEntry, error)
 var IsServiceExists func(entries []*api.ServiceEntry, name string) *api.ServiceEntry
 var ExtContext *gin.Context
 var rw sync.RWMutex
-
+var Emit func(url, subject string, message string) (bool, error)
+var Brokers []BrokerInfo
 var microservices []*api.ServiceEntry
+var StdAction *Action
 
 func serviceExists(name string) bool {
 	if ExistingService == nil || IsServiceExists == nil {
@@ -77,6 +82,76 @@ func serviceSignature(ctx *gin.Context, service, name string) ([]*ast.StructFiel
 		return args, ret, nil
 	}
 	return nil, nil, nil
+}
+func findURL(topic string) (string, error) {
+	if topic == "" {
+		return "", errors.New("Empty topic. Please fill it and reply")
+	}
+	if len(Brokers) == 0 {
+		return "", errors.New("No avalaible brokers")
+	}
+	url := ""
+	for _, broker := range Brokers {
+		t := strings.Split(broker.Topic, ".")
+		b := strings.Split(topic, ".")
+		if strings.EqualFold(t[0], b[0]) {
+			url = broker.URL
+			break
+		}
+	}
+	if url == "" {
+		return "", errors.New("Topic '%s' not found in the list of available brokers")
+	}
+	return url, nil
+}
+func emit(ctx *gin.Context, subject string, message any) bool {
+	if Emit == nil {
+		return false
+	}
+	select {
+	case <-ctx.Done():
+		log.Println("Emit cancled by the user on : ", time.Now())
+		return false
+	default:
+		url, err := findURL(subject)
+		if err != nil {
+			log.Println(err)
+			return false
+		}
+		var msg []byte
+		if t, ok := message.(*object.Struct); ok {
+			msg, err = json.Marshal(t)
+			if err != nil {
+				log.Println(err)
+				return false
+			}
+		}
+		if t, ok := message.(*object.Array); ok {
+			msg, err = json.Marshal(t)
+			if err != nil {
+				log.Println(err)
+				return false
+			}
+		}
+		switch t := message.(type) {
+		case *object.String, *object.Integer, *object.Float,
+			*object.Boolean, *object.Date, *object.Duration:
+			msg, err = json.Marshal(t)
+			if err != nil {
+				log.Println(err)
+				return false
+			}
+		default:
+			log.Printf("Invalid broker data type : %v", t)
+			return false
+		}
+		ok, err := Emit(url, subject, string(msg))
+		if err != nil {
+			log.Println(err)
+			return false
+		}
+		return ok
+	}
 }
 
 type Program interface {
@@ -367,7 +442,7 @@ func (a *Action) GetInterface(ctx *gin.Context, req RequestData) (string, error)
 	defer db.Close()
 	act := action.NewAction(ctx, db, Db_connect_params.Kind)
 	val, erro := act.Interpret(qry, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
-		serviceExists, serviceSignature, a.eval)
+		serviceExists, serviceSignature, a.eval, emit)
 	if erro != nil {
 		return "", err
 	}
@@ -403,7 +478,7 @@ func (a *Action) Run(ctx *gin.Context, req RequestData) (*ResponseData, error) {
 		if prog, ok := a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)]; !ok {
 			// Execute prog
 			val := act.Execute(prog, a.secu.hasFilter, a.secu.getFilter, args, true, true,
-				serviceExists, serviceSignature, a.eval)
+				serviceExists, serviceSignature, a.eval, emit)
 			return &ResponseData{Error: 0, Data: map[string]interface{}{"result": val}}, nil
 		}
 		qry := fmt.Sprintf(`Action "execute a query"()\n start RETURN SELECT ACTION.ACTION,KNOWLEDGE.REFRESHABLE
@@ -413,7 +488,7 @@ func (a *Action) Run(ctx *gin.Context, req RequestData) (*ResponseData, error) {
 			req.Knowledge, req.Proc, req.Role)
 		flag := 0
 		val, erro := act.Interpret(qry, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
-			serviceExists, serviceSignature, a.eval)
+			serviceExists, serviceSignature, a.eval, emit)
 		if erro != nil {
 			return &ResponseData{}, err
 		}
@@ -432,7 +507,7 @@ func (a *Action) Run(ctx *gin.Context, req RequestData) (*ResponseData, error) {
 			}
 			a.knb[strings.ToLower(fmt.Sprintf("%s.%s", req.Proc, req.Knowledge))] = flag > 0
 			val, erro = act.Interpret(qry, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
-				serviceExists, serviceSignature, a.eval)
+				serviceExists, serviceSignature, a.eval, emit)
 			if flag > 0 {
 				go a.secu.load()
 			}
@@ -459,7 +534,7 @@ func (a *Action) Fetch(ctx *gin.Context, req RequestData) (*ResponseData, error)
 		defer db.Close()
 		act := action.NewAction(ctx, db, Db_connect_params.Kind)
 		val, erro := act.Interpret(src, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
-			serviceExists, serviceSignature, a.eval)
+			serviceExists, serviceSignature, a.eval, emit)
 		if erro != nil {
 			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": "Too many errors occured while trying to retrieve the query data"}}, errors.New("Too many errors occured while trying to retrieve the query data")
 		}
@@ -593,7 +668,7 @@ func (a *Action) getContractText(name, proc, goal, role string, act *action.Acti
 			  WHERE (CONTRACT.NAME=='%s' And CONTRACT.PROC=='%s' And CONTRACT.GOAL=='%s' And PROCESS.ROLE=='%s')\n stop`,
 		name, proc, goal, role)
 	val, err := act.Interpret(str, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
-		serviceExists, serviceSignature, a.eval)
+		serviceExists, serviceSignature, a.eval, emit)
 	if len(err) > 0 {
 		return "", fmt.Errorf("Too many errors occured while interpreting the contract '%s'", name)
 	}
@@ -754,7 +829,7 @@ func (a *Action) ExecContract(ctx *gin.Context, req RequestData) (object.Object,
 		act := action.NewAction(ctx, db, Db_connect_params.Kind)
 		if prog, ok := a.contracts[req.Data["contract"].(string)]; ok {
 			return act.Execute(prog, a.secu.hasFilter, a.secu.getFilter, args, true, false,
-				serviceExists, serviceSignature, a.eval), true
+				serviceExists, serviceSignature, a.eval, emit), true
 		}
 		str := fmt.Sprintf(`Action "execute a query"()\n start RETURN SELECT RULE.ACTION
 				FROM CONTRACT INNER JOIN RULE ON (CONTRACT.GOAL=RULE.GOAL AND CONTRACT.PROC=RULE.PROC)
@@ -762,7 +837,7 @@ func (a *Action) ExecContract(ctx *gin.Context, req RequestData) (object.Object,
 				WHERE (CONTRACT.NAME=='%s' And CONTRACT.PROC=='%s' And CONTRACT.GOAL=='%s' And PROCESS.ROLE=='%s')\n stop`,
 			req.Data["contract"], req.Proc, req.Knowledge, req.Role)
 		val, err := act.Interpret(str, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, args, true, false,
-			serviceExists, serviceSignature, a.eval)
+			serviceExists, serviceSignature, a.eval, emit)
 		if len(err) > 0 {
 			return newError("Too many errors occured while interpreting the contract '%s'", req.Data["contract"]), false
 		}
@@ -799,7 +874,73 @@ func getJwt(ctx *gin.Context) (string, error) {
 
 	return tokenString, nil
 }
-func HandleBrokerMessage(data []byte) bool {
-	log.Printf("Message recu : %s", string(data))
-	return true
+func HandleBrokerMessage(url, topic, subj string, data []byte) bool {
+	// find the right knowled which matches with the subject
+	// load it and transmit to it the data
+	// run it and right eventually the errors status in the logfile
+	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
+	if err != nil {
+		log.Printf("Nsina: Error when trying to retrieve the action from the database : %v", err)
+		return false
+	}
+	defer db.Close()
+
+	cfg := make(map[string]interface{})
+	err = json.Unmarshal(data, &cfg)
+	if err != nil {
+		log.Println(err)
+		return false
+	}
+	v := make(map[string]object.Object)
+	for key, val := range cfg {
+		if obj, ok := val.(object.Object); ok {
+			v[key] = obj
+		}
+	}
+
+	rows, err := db.Query(fmt.Sprintf(`SELECT R.ACTION, R.PROC, R.GOAL, P.ROLE 
+	 FROM EVENT EV INNER JOIN RULE R ON (EV.PROC==R.PROC AND EV.GOAL==R.GOAL )
+	 	  INNER JOIN PROCESS P ON (R.PROC==P.CODE)
+	 WHERE (EV.URL=='%s' AND EV.SUBJECT=='%s)`, strings.ToLower(url), strings.ToLower(topic)))
+
+	if err != nil {
+		log.Println(err)
+		return false
+	}
+	if rows.Next() {
+		qry := ""
+		req := &RequestData{}
+		rows.Scan(&qry, &req.Proc, &req.Knowledge, &req.Role)
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		// val, err := json.Marshal(req)
+		// if err != nil {
+		// 	log.Println(err)
+		// 	return false
+		// }
+		body := new(bytes.Buffer)
+		mw := multipart.NewWriter(body)
+		defer mw.Close()
+		mw.WriteField("proc", req.Proc)
+		mw.WriteField("role", req.Role)
+		mw.WriteField("knowledge", req.Knowledge)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/event", nil)
+		ctx.Request.Header.Set("Content-Type", "encoding/json")
+
+		act := action.NewAction(ctx, db, Db_connect_params.Kind)
+		result, erro := act.Interpret(qry, StdAction.secu.IsHandlabled, StdAction.secu.hasFilter,
+			StdAction.secu.getFilter, v, false, false,
+			serviceExists, serviceSignature, StdAction.eval, emit)
+		if erro != nil {
+			log.Println("Too many errors occured while trying to treat the subject")
+			return false
+		}
+		if result.Type() == object.ERROR_OBJ {
+			log.Println(result.Inspect())
+			return false
+		}
+		return true
+	}
+	log.Println("No subject handler found")
+	return false
 }

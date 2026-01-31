@@ -47,6 +47,7 @@ func runAction(ctx *gin.Context, s Action) {
 		ctx.JSON(http.StatusOK, res)
 	}
 }
+
 func fetchAction(ctx *gin.Context, s Action) {
 	select {
 	case <-ctx.Done():

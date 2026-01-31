@@ -259,12 +259,16 @@ func main() {
 		if e != nil {
 			log.Fatal(e.Error())
 		}
+		webapi.Emit = registration.Emit
 		webapi.Start(int(webapi.ConfigClient.Params["service_port"].(uint64))) //port a lire
 		log.Printf("The microservice '%s' is running on port %d in '%s' mode", n, webapi.ConfigClient.Params["service_port"].(uint64),
 			webapi.ConfigClient.Params["service_kind"].(string))
+
 	}
 	// Subscription to Nats jetstream topics
 	if len(conf.Nats.Brokers) > 0 {
+		webapi.Brokers = make([]webapi.BrokerInfo, len(conf.Nats.Brokers))
+		copy(webapi.Brokers, conf.Nats.Brokers)
 		go func() {
 			for _, broker := range conf.Nats.Brokers {
 				registration.Subscrib(broker.URL, broker.Topic)

@@ -26,7 +26,7 @@ require (
 )
 
 require (
-	github.com/akristianlopez/action v0.0.0-20260129174602-5326e296fe87
+	github.com/akristianlopez/action v0.0.0-20260131103419-b509afa06938
 	github.com/bytedance/sonic v1.14.0 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
