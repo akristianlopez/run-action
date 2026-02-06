@@ -2,7 +2,8 @@ package registration
 
 import (
 	"errors"
-	"log"
+	"log/slog"
+	"os"
 
 	"github.com/hashicorp/vault/api"
 )
@@ -21,7 +22,8 @@ func Read(addr, token, path /*, role, pass*/ string) (string, error) {
 		return "", err
 	}
 	if secret == nil {
-		log.Fatal("Connection to the vault server is impossible")
+		slog.Error("Connection to the vault server is impossible")
+		os.Exit(1)
 	}
 	// Accéder à la valeur
 	// value := secret.Data["data"].(map[string]interface{})

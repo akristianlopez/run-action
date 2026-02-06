@@ -43,6 +43,24 @@ type Config struct {
 		Deregistry_delay_time int    `yaml:"deregistry_delay" json:"deregistry_delay"`
 	} `yaml:"consul" json:"consul"`
 }
+type ConfigEx struct {
+	Database struct {
+		Address string `yaml:"url" json:"url"`
+		Port    int    `yaml:"port" json:"port"`
+		Usrid   string `yaml:"username" json:"username"`
+		Name    string `yaml:"database" json:"database"`
+		Kind    string `yaml:"kind" json:"kind"`
+	} `yaml:"database" json:"database"`
+	Nats struct {
+		Brokers []BrokerInfo `yaml:"brokers" json:"brokers"`
+	} `yaml:"kafka" json:"kafka"`
+	Consul struct {
+		URL                   string `yaml:"url" json:"address"`
+		Health_check_interval int    `yaml:"check_delay" json:"check_delay"`
+		Timeout               int    `yaml:"timeout" json:"timeout"`
+		Deregistry_delay_time int    `yaml:"deregistry_delay" json:"deregistry_delay"`
+	} `yaml:"consul" json:"consul"`
+}
 type ClientConfig struct {
 	Params map[string]interface{}
 	Port   int

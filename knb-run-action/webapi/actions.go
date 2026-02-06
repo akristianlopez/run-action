@@ -35,6 +35,7 @@ var Emit func(url, subject string, message string) (bool, error)
 var Brokers []BrokerInfo
 var microservices []*api.ServiceEntry
 var StdAction *Action
+var ReadSecret func(name string) (string, error)
 
 func serviceExists(name string) bool {
 	if ExistingService == nil || IsServiceExists == nil {
@@ -386,9 +387,8 @@ func newAction() *Action {
 	s.secu.load()
 	return s
 }
-func (a *Action) getSecretKey() (*[]byte, error) {
-	secretKey := []byte("votre_cle_secrete_tres_securisee") // Remplacez par votre clé secrète
-	return &secretKey, nil
+func (a *Action) getSecretKey() (string, error) {
+	return ReadSecret("jwt_key")
 }
 func (a *Action) FillToken(ctx *gin.Context) (bool, error) {
 	tokenString, err := getJwt(ctx)
@@ -423,8 +423,29 @@ func (a *Action) fillSecurity(ctx *gin.Context) (string, error) {
 	return "", nil
 }
 
-func (a *Action) IsTokenValid(tok, key string) (bool, error) {
-	return true, nil
+func (a *Action) IsTokenValid(tok, key string) bool {
+	return true
+}
+func (a *Action) validateToken(token string) bool {
+	// 1. Tenter de valider avec la clé actuelle en mémoire
+	if a.IsTokenValid(token, ConfigClient.Params["jwt_key"].(string)) {
+		return true
+	}
+
+	// 2. Si ça échoue, on vérifie si le fichier sur le disque a été mis à jour
+	// (Utile uniquement si vous utilisez un volume partagé ou un agent externe)
+	switch ConfigClient.Params["jwt_key"].(string) {
+	case "swarm":
+		freshKey, _ := ReadSecret("jwt_key")
+		if freshKey != ConfigClient.Params["jwt_key"].(string) {
+			log.Println("🔄 Nouvelle clé détectée sur le disque, mise à jour de la mémoire...")
+			ConfigClient.Params["jwt_key"] = freshKey
+			return a.IsTokenValid(token, ConfigClient.Params["jwt_key"].(string))
+		}
+	case "standalone":
+		return a.IsTokenValid(token, ConfigClient.Params["jwt_key"].(string))
+	}
+	return false
 }
 func (a *Action) GetInterface(ctx *gin.Context, req RequestData) (string, error) {
 	if qry, ok := a.screen[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)]; !ok {

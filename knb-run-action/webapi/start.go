@@ -10,6 +10,8 @@ import (
 func Start(port int) error {
 	store := newAction()
 	router := gin.Default()
+	router.SetTrustedProxies(nil)
+
 	addRoutes(router, *store)
 
 	return router.Run(fmt.Sprintf(":%d", port))

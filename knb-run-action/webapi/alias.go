@@ -85,6 +85,10 @@ func health(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, "OK")
 }
 
+// func dataHandler(ctx *gin.Context) {
+// 	ctx.JSON(http.StatusOK, "OK")
+// }
+
 func refresh(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, "OK")
 }

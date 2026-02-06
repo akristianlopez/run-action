@@ -2,7 +2,7 @@ package registration
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/akristianlopez/run-action/knb-run-action/webapi"
@@ -12,13 +12,13 @@ import (
 func Subscrib(url, topic string) error {
 	nc, err := nats.Connect(url)
 	if err != nil {
-		log.Printf("The subscrition is not possible %v", err)
+		slog.Error("The subscrition is not possible", "error", err)
 		return err
 	}
 	defer nc.Close()
 	js, err := nc.JetStream()
 	if err != nil {
-		log.Printf("The subscrition is not possible %v", err)
+		slog.Error("The subscrition is not possible", "error", err)
 		return err
 	}
 	//webapi.Emit=Emit
@@ -33,17 +33,19 @@ func Subscrib(url, topic string) error {
 		}
 	}, nats.Durable(webapi.ConfigClient.Params["service_name"].(string)), nats.ManualAck())
 	if err != nil {
-		log.Println(err)
+		slog.Error("The subscrition is not possible", "error", err)
+		return err
 	}
 	defer sub.Unsubscribe()
-	log.Println("En attente de messages...")
+	slog.Info("En attente de messages...")
 	select {} //gader le programme actif
 }
 
 func Emit(url string, subj string, message string) (bool, error) {
+	//Penser a integrer le jwt token de l'appelant
 	con, err := nats.Connect(url)
 	if err != nil {
-		log.Printf("The subscrition is not possible %v", err)
+		slog.Warn("The subscrition is not possible", "error", err)
 		return false, err
 	}
 	defer con.Close()

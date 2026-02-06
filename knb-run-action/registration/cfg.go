@@ -2,10 +2,11 @@ package registration
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/akristianlopez/run-action/knb-run-action/webapi"
 	"github.com/goccy/go-yaml"
@@ -31,7 +32,7 @@ func WatchConfig(addr, key string) (*webapi.Config, error) {
 	// Handler function called when the key changes
 	plan.Handler = func(idx uint64, data interface{}) {
 		if data == nil {
-			fmt.Println("Key deleted or not found")
+			slog.Info("Key deleted or not found")
 			return
 		}
 
@@ -39,7 +40,7 @@ func WatchConfig(addr, key string) (*webapi.Config, error) {
 		if kv, ok := data.(*api.KVPair); ok {
 			var conf webapi.Config
 			if err := yaml.Unmarshal(kv.Value, &conf); err != nil {
-				fmt.Printf("YAML invalide: %v", err)
+				slog.Warn("YAML invalide", "error", err)
 				return
 			}
 			webapi.Db_connect_params = &webapi.Db_access_params{}
@@ -63,19 +64,21 @@ func WatchConfig(addr, key string) (*webapi.Config, error) {
 
 			db_par, err := Read(fmt.Sprintf("http://%s", conf.Vault.URL), conf.Vault.Token, conf.Vault.Path /*"login", "password"*/) //"cubbyhole/webservice/db_access"
 			if err != nil {
-				log.Fatalf("Problem related to the database connection: '%s'", err.Error())
+				slog.Error("Problem related to the database connection", "error", err.Error())
+				os.Exit(1)
 			}
 			webapi.Db_connect_params.Password = db_par
-			fmt.Printf("Change detected at index %d: %s = %s\n", idx, kv.Key, string(kv.Value))
+			slog.Info(fmt.Sprintf("Change detected at index %d: %s = %s\n", idx, kv.Key, string(kv.Value)))
 		} else {
-			fmt.Printf("Unexpected data type: %T\n", data)
+			slog.Warn("Unexpected data type", "data", data)
 		}
 	}
 
 	// Run the watch plan in a goroutine
 	go func() {
 		if err := plan.Run(addr); err != nil {
-			log.Fatalf("Error running watch plan: %v", err)
+			slog.Error("Error running watch plan", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -84,8 +87,19 @@ func WatchConfig(addr, key string) (*webapi.Config, error) {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 
-	fmt.Println("Stopping watch...")
+	hn, _ := os.Hostname()
+	// Deregister the microservice from consul
+	err = Deregister(hn, webapi.ConfigClient.Params["discovery_service_address"].(string))
+	if err != nil {
+		slog.Error(err.Error())
+	}
 	plan.Stop()
+	time.Sleep(time.Duration(webapi.Deregister_waiting_time) * time.Second)
+	slog.Info("Stopping watch...")
+
+	// Wait 20 secondes after deregistration before closing the microservice
+
+	// thinking about stopping the service without abort current task
 	os.Exit(0)
 	return nil, nil
 }
@@ -94,13 +108,15 @@ func ReadDefaultConfig(addr, key, ip string) {
 	// Create a watch plan for a specific KV key
 	// key := "wosa/default"
 	if addr == "" || key == "" {
-		log.Fatal("Configuration service's parameter is needed")
+		slog.Error("Configuration service's parameter is needed")
+		os.Exit(1)
 	}
 	config := api.DefaultConfig()
 	config.Address = addr
 	client, err := api.NewClient(config)
 	if err != nil {
-		log.Fatalf("Error creating discovery client: %v", err)
+		slog.Error("Error creating discovery client", "error", err)
+		os.Exit(1)
 	}
 
 	// 2. Access the KV endpoint
@@ -110,17 +126,20 @@ func ReadDefaultConfig(addr, key, ip string) {
 	// The Get method blocks until it receives a response.
 	kvPair /*queryMeta*/, _, err := kv.Get(key, nil)
 	if err != nil {
-		log.Fatalf("Error getting key %s: %v", key, err)
+		slog.Error(fmt.Sprintf("Error getting key %s: %v", key, err))
+		os.Exit(1)
 	}
 
 	if kvPair == nil {
-		log.Fatalf("Key %s not found", key)
+		slog.Error(fmt.Sprintf("Key %s not found", key))
+		os.Exit(1)
 	}
 	// var conf webapi.DefaultConfig = webapi.DefaultConfig{}
 	var conf map[string]interface{}
 
 	if err := yaml.Unmarshal(kvPair.Value, &conf); err != nil {
-		log.Fatalf("YAML invalide: %v", err)
+		slog.Error(fmt.Sprintf("YAML invalide: %v", err))
+		os.Exit(1)
 	}
 	webapi.ConfigClient.Params["service_name"] = (conf[ip].(map[string]interface{})["name"]).(string)
 	webapi.ConfigClient.Params["service_port"] = (conf[ip].(map[string]interface{})["port"]).(uint64)
@@ -131,13 +150,15 @@ func ReadConfig(addr, key string) (*webapi.Config, error) {
 	// Create a watch plan for a specific KV key
 	// key := "wosa/default"
 	if addr == "" || key == "" {
-		log.Fatal("Configuration service's parameter is needed")
+		slog.Error("Configuration service's parameter is needed")
+		os.Exit(1)
 	}
 	config := api.DefaultConfig()
 	config.Address = addr
 	client, err := api.NewClient(config)
 	if err != nil {
-		log.Fatalf("Error creating discovery client: %v", err)
+		slog.Error(fmt.Sprintf("Error creating discovery client: %v", err))
+		os.Exit(1)
 	}
 
 	// 2. Access the KV endpoint
@@ -147,16 +168,19 @@ func ReadConfig(addr, key string) (*webapi.Config, error) {
 	// The Get method blocks until it receives a response.
 	kvPair /*queryMeta*/, _, err := kv.Get(key, nil)
 	if err != nil {
-		log.Fatalf("Error getting key %s: %v", key, err)
+		slog.Error(fmt.Sprintf("Error getting key %s: %v", key, err))
+		os.Exit(1)
 	}
 
 	if kvPair == nil {
-		log.Fatalf("Key %s not found", key)
+		slog.Error(fmt.Sprintf("Key %s not found", key))
+		os.Exit(1)
 	}
 	// var conf webapi.DefaultConfig = webapi.DefaultConfig{}
 	var conf webapi.Config
 	if err := yaml.Unmarshal(kvPair.Value, &conf); err != nil {
-		log.Fatalf("YAML invalide: %v", err)
+		slog.Error(fmt.Sprintf("YAML invalide: %v", err))
+		os.Exit(1)
 	}
 
 	return &conf, nil

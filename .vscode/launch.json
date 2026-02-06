@@ -10,7 +10,7 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}/knb-run-action/",
-            "args": ["-m", "fetch", "-c","127.0.0.1:8500","wosa/default", "-r", "127.0.0.1", "8500", "10", "30","120", "-p", "5000", "-v", "127.0.0.1", "8200"]
+            "args": ["-c","127.0.0.1:8500","wosa/default"]
         }
     ]
     
