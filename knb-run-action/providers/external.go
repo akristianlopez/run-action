@@ -30,23 +30,39 @@ ces differentes options peuvent etre combinees.
 */
 type StandAloneProvider struct {
 	SysConf *webapi.ClientConfig
+	conf    *webapi.Config
+	ip      string
 }
 
 func (c *StandAloneProvider) registerService(cfg SwarmConsulConfig) error {
 	return nil
 }
-func (c *StandAloneProvider) subscrib(url, topic string) error {
-	return nil
+func (c *StandAloneProvider) subscrib(url, topic, kind string) error {
+	switch strings.ToLower(kind) {
+	case "nats":
+		webapi.Emit = registration.NatsPublish
+		go registration.NatsSubscrib(url, topic)
+		return nil
+	case "kafka":
+		webapi.Emit = registration.KafkaPublish
+		go registration.KafkaSubscrib(url, topic)
+		return nil
+	case "rabbit":
+		webapi.Emit = registration.RabbitMQPublish
+		go registration.RabbitMQSubscrib(url, topic)
+		return nil
+	}
+	return fmt.Errorf("Invalid kind value : %s", kind)
 }
 func (c *StandAloneProvider) ReadConfig() error {
-	ip := GetLocalIP().String()
+	c.ip = GetLocalIP().String()
 	// 1. lecture des arguments de la ligne de commandes
 	c.readAppArgument(os.Args)
 
 	name := os.Getenv("SERVICE_NAME")
 	if name == "" {
 		registration.ReadDefaultConfig(webapi.ConfigClient.Params["configuration_service_address"].(string),
-			webapi.ConfigClient.Params["configuration_default_path"].(string), ip)
+			webapi.ConfigClient.Params["configuration_default_path"].(string), c.ip)
 	} else {
 		webapi.ConfigClient.Params["service_name"] = name
 		port := 0
@@ -94,6 +110,7 @@ func (c *StandAloneProvider) ReadConfig() error {
 		slog.Error("Configuration file is empty")
 		os.Exit(1)
 	}
+	c.conf = conf
 	// Load Database configuration
 	// Except the password that will be retrieved from the vault server
 	webapi.Db_connect_params = &webapi.Db_access_params{}
@@ -114,9 +131,16 @@ func (c *StandAloneProvider) ReadConfig() error {
 	webapi.ConfigClient.Params["secret_service_address"] = conf.Vault.URL
 	webapi.ConfigClient.Params["secret_path"] = conf.Vault.Path
 	webapi.ConfigClient.Params["secret_service_token"] = conf.Vault.Token
-
+	return nil
 	// Reminds to treat :
 	// - load kafka parameters
+}
+
+func (c *StandAloneProvider) readSecret(name string) (string, error) {
+	return "", nil
+}
+
+func (c *StandAloneProvider) Launch() {
 	IsDiscoveryServiceDefined := true
 	IsVaultServiceDefined := true
 	if webapi.ConfigClient.Params["discovery_service_address"].(string) == "" {
@@ -198,7 +222,7 @@ func (c *StandAloneProvider) ReadConfig() error {
 		}
 		webapi.Running_mode = webapi.ConfigClient.Params["service_kind"].(string)
 
-		db_par, err := registration.Read(fmt.Sprintf("http://%s", conf.Vault.URL), conf.Vault.Token, conf.Vault.Path /*"login", "password"*/) //"cubbyhole/webservice/db_access"
+		db_par, err := registration.Read(fmt.Sprintf("http://%s", c.conf.Vault.URL), c.conf.Vault.Token, c.conf.Vault.Path /*"login", "password"*/) //"cubbyhole/webservice/db_access"
 		if err != nil {
 			slog.Error("Problem related to the database connection", "error", err.Error())
 			os.Exit(1)
@@ -215,13 +239,12 @@ func (c *StandAloneProvider) ReadConfig() error {
 		n, e := registration.Register(webapi.ConfigClient.Params["service_port"].(uint64),
 			webapi.ConfigClient.Params["service_name"].(string),
 
-			webapi.ConfigClient.Params["discovery_service_address"].(string), ip,
+			webapi.ConfigClient.Params["discovery_service_address"].(string), c.ip,
 			webapi.ConfigClient.Params["service_kind"].(string))
 		if e != nil {
 			slog.Error(e.Error())
 			os.Exit(1)
 		}
-		webapi.Emit = registration.Emit
 		webapi.Start(int(webapi.ConfigClient.Params["service_port"].(uint64))) //port a lire
 		slog.Info(fmt.Sprintf("The microservice '%s' is running on port %d in '%s' mode", n, webapi.ConfigClient.Params["service_port"].(uint64),
 			webapi.ConfigClient.Params["service_kind"].(string)))
@@ -229,22 +252,17 @@ func (c *StandAloneProvider) ReadConfig() error {
 
 	}
 	// Subscription to Nats jetstream topics
-	if len(conf.Nats.Brokers) > 0 {
-		webapi.Brokers = make([]webapi.BrokerInfo, len(conf.Nats.Brokers))
-		copy(webapi.Brokers, conf.Nats.Brokers)
-		for _, broker := range conf.Nats.Brokers {
-			go registration.Subscrib(broker.URL, broker.Topic)
+	if len(c.conf.Nats.Brokers) > 0 {
+		webapi.Brokers = make([]webapi.BrokerInfo, len(c.conf.Nats.Brokers))
+		copy(webapi.Brokers, c.conf.Nats.Brokers)
+		for _, broker := range c.conf.Nats.Brokers {
+			err := c.subscrib(broker.URL, broker.Topic, broker.Kind)
+			if err != nil {
+				slog.Error("Error while trying to subscrib", "error", err)
+				os.Exit(1)
+			}
 		}
 	}
-	return nil
-}
-
-func (c *StandAloneProvider) readSecret(name string) (string, error) {
-	return "", nil
-}
-
-func (c *StandAloneProvider) Launch() {
-
 }
 
 func (c *StandAloneProvider) readAppArgument(arg []string) {

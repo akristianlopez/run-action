@@ -3,7 +3,6 @@ package webapi
 import "github.com/gin-gonic/gin"
 
 func addRoutes(r *gin.Engine, act Action) {
-	r.SetTrustedProxies(nil)
 	api := r.Group("/action")
 	api.GET("/run", func(ctx *gin.Context) { getScreen(ctx, act) })
 	api.POST("/run", func(ctx *gin.Context) { runAction(ctx, act) })

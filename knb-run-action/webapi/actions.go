@@ -5,10 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -18,10 +19,12 @@ import (
 	"github.com/akristianlopez/action/ast"
 	"github.com/akristianlopez/action/object"
 	"github.com/gin-gonic/gin"
+	_ "github.com/go-sql-driver/mysql" // Import du driver MySQL/MariaDB
 	"github.com/goccy/go-json"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/hashicorp/consul/api"
-	_ "github.com/lib/pq" // Driver PostgreSQL
+	_ "github.com/lib/pq"           // Driver PostgreSQL
+	_ "github.com/mattn/go-sqlite3" // Import du driver SQLite
 )
 
 var ErrNotFound = errors.New("not found")
@@ -31,7 +34,7 @@ var ExistingService func() ([]*api.ServiceEntry, error)
 var IsServiceExists func(entries []*api.ServiceEntry, name string) *api.ServiceEntry
 var ExtContext *gin.Context
 var rw sync.RWMutex
-var Emit func(url, subject string, message string) (bool, error)
+var Emit func(url, subj, message, token string) (bool, error)
 var Brokers []BrokerInfo
 var microservices []*api.ServiceEntry
 var StdAction *Action
@@ -44,7 +47,7 @@ func serviceExists(name string) bool {
 	if microservices == nil {
 		srv, err := ExistingService()
 		if err != nil {
-			log.Println(err)
+			slog.Error("Invalid service name", "service name", name, "error", err)
 			return false
 		}
 		microservices = srv
@@ -104,55 +107,6 @@ func findURL(topic string) (string, error) {
 		return "", errors.New("Topic '%s' not found in the list of available brokers")
 	}
 	return url, nil
-}
-func emit(ctx *gin.Context, subject string, message any) bool {
-	if Emit == nil {
-		return false
-	}
-	select {
-	case <-ctx.Done():
-		log.Println("Emit cancled by the user on : ", time.Now())
-		return false
-	default:
-		url, err := findURL(subject)
-		if err != nil {
-			log.Println(err)
-			return false
-		}
-		var msg []byte
-		if t, ok := message.(*object.Struct); ok {
-			msg, err = json.Marshal(t)
-			if err != nil {
-				log.Println(err)
-				return false
-			}
-		}
-		if t, ok := message.(*object.Array); ok {
-			msg, err = json.Marshal(t)
-			if err != nil {
-				log.Println(err)
-				return false
-			}
-		}
-		switch t := message.(type) {
-		case *object.String, *object.Integer, *object.Float,
-			*object.Boolean, *object.Date, *object.Duration:
-			msg, err = json.Marshal(t)
-			if err != nil {
-				log.Println(err)
-				return false
-			}
-		default:
-			log.Printf("Invalid broker data type : %v", t)
-			return false
-		}
-		ok, err := Emit(url, subject, string(msg))
-		if err != nil {
-			log.Println(err)
-			return false
-		}
-		return ok
-	}
 }
 
 type Program interface {
@@ -283,13 +237,47 @@ func (sec *security) removeDuplicates(input []string) []string {
 func (sec *security) load() (bool, error) {
 	// loading of the context
 	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
-	act := action.NewAction(nil, db, Db_connect_params.Kind)
-
 	if err != nil {
 		return false, fmt.Errorf("Nsina: Error when trying to retrieve the action from the database : %v", err)
 	}
 	defer db.Close()
-	rows, err := db.Query("SELECT P.ROLE,C.PROC,C.GOAL,C.OBJECT,C.TRANS FROM CONTEXT C INNER JOIN PROCESS P ON (P.CODE== C.PROC)")
+	act := action.NewAction(nil, db, Db_connect_params.Kind)
+	// check wether the sysobject exist in the database, otherwise reinitialize the database
+	// two databases are allowed : postgresql and mariadb
+	sql := ""
+	switch strings.ToLower(Db_connect_params.Kind) {
+	case "postgresql", "postgres":
+		sql = "select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','TEXT','CONTRACT','EVENT') and table_catalog ='knb_catalog'"
+	case "mariadb":
+		sql = "select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','TEXT','CONTRACT','EVENT') and table_catalog ='knb_catalog'"
+	default:
+		slog.Error("Invalid database kind", "kind", Db_connect_params.Kind)
+		os.Exit(1)
+	}
+	rows, err := db.Query(sql)
+	if err != nil {
+		return false, err
+	}
+	cpt := 0
+	for rows.Next() {
+		cpt++
+	}
+	if cpt < 1 || cpt != 13 {
+		sql = genScriptInit()
+		val, err := act.Interpret(sql, sec.IsHandlabled, sec.hasFilter, sec.getFilter, nil, true, true,
+			serviceExists, serviceSignature, nil, emit)
+		if err != nil {
+			v, _ := json.Marshal(err)
+			slog.Error("Initialization of the system security", "source", sql, "error", string(v))
+			return false, fmt.Errorf("Too many error occured")
+		}
+		if val.Type() == object.ERROR_OBJ {
+			slog.Error("Initialization of the system security", "source", sql, "error", val.Inspect())
+			return false, fmt.Errorf("Initialization of the system security : %s", val.Inspect())
+		}
+		return true, nil
+	}
+	rows, err = db.Query("SELECT P.ROLE,C.PROC,C.GOAL,C.OBJECT,C.TRANS FROM CONTEXT C INNER JOIN PROCESS P ON (P.CODE== C.PROC)")
 	if err != nil {
 		return false, err
 	}
@@ -384,7 +372,11 @@ func newAction() *Action {
 		action:     make(map[string]map[string]map[string]*ast.Action),
 		screen:     make(map[string]map[string]map[string]string),
 	}
-	s.secu.load()
+	_, err := s.secu.load()
+	if err != nil {
+		slog.Error("Error at the initialization of the step", "error", err.Error())
+		os.Exit(1)
+	}
 	return s
 }
 func (a *Action) getSecretKey() (string, error) {
@@ -423,12 +415,12 @@ func (a *Action) fillSecurity(ctx *gin.Context) (string, error) {
 	return "", nil
 }
 
-func (a *Action) IsTokenValid(tok, key string) bool {
+func IsTokenValid(tok, key string) bool {
 	return true
 }
-func (a *Action) validateToken(token string) bool {
+func ValidateToken(token, key string) bool {
 	// 1. Tenter de valider avec la clé actuelle en mémoire
-	if a.IsTokenValid(token, ConfigClient.Params["jwt_key"].(string)) {
+	if IsTokenValid(token, ConfigClient.Params["jwt_key"].(string)) {
 		return true
 	}
 
@@ -438,12 +430,12 @@ func (a *Action) validateToken(token string) bool {
 	case "swarm":
 		freshKey, _ := ReadSecret("jwt_key")
 		if freshKey != ConfigClient.Params["jwt_key"].(string) {
-			log.Println("🔄 Nouvelle clé détectée sur le disque, mise à jour de la mémoire...")
+			slog.Info("🔄 Nouvelle clé détectée sur le disque, mise à jour de la mémoire...")
 			ConfigClient.Params["jwt_key"] = freshKey
-			return a.IsTokenValid(token, ConfigClient.Params["jwt_key"].(string))
+			return IsTokenValid(token, ConfigClient.Params["jwt_key"].(string))
 		}
 	case "standalone":
-		return a.IsTokenValid(token, ConfigClient.Params["jwt_key"].(string))
+		return IsTokenValid(token, ConfigClient.Params["jwt_key"].(string))
 	}
 	return false
 }
@@ -592,7 +584,7 @@ func (a *Action) Fetch(ctx *gin.Context, req RequestData) (*ResponseData, error)
 					}
 					data, err := json.Marshal(row)
 					if err != nil {
-						log.Println("Error encoding JSON:", err)
+						slog.Error("Error encoding JSON", "error", err)
 						continue
 					}
 					// Write JSON followed by newline for easy parsing
@@ -630,7 +622,6 @@ func (a *Action) Check(ctx *gin.Context, req RequestData, id, table, newName str
 	if err != nil {
 		result.Error = 1
 		result.Data["Error"] = err.Error()
-		// log.Fatalf("Nsina: Error when trying to connect to the database : %v", err)
 		return result, nil, err
 	}
 	defer db.Close()
@@ -716,21 +707,21 @@ func (a *Action) Signature(ctx *gin.Context, req RequestData) ResponseData {
 	resp := ResponseData{Error: 0, Data: make(map[string]interface{})}
 	select {
 	case <-ctx.Done():
-		log.Println("Getting signature cancled by the user on : ", time.Now())
+		slog.Error("Getting signature cancled by the user")
 		resp.Error = 1
 		resp.Data["msg"] = fmt.Sprintf("Getting signature cancled by the user on : %v", time.Now())
 		return resp
 	default:
 		if microservices == nil {
-			log.Println("The microservices list is not initialized.", time.Now())
+			slog.Error("The microservices list is not initialized.")
 			resp.Error = 1
 			resp.Data["msg"] = fmt.Sprintf("The microservices list is not initialized. %v", time.Now())
 			return resp
 		}
 		service := req.Data["service"].(string) // name of the microservice
 		if !strings.EqualFold(ConfigClient.Params["service_name"].(string), service) {
-			log.Printf("microservice name '%s' doesn't match to '%s'",
-				ConfigClient.Params["service_name"].(string), service)
+			slog.Error(fmt.Sprintf("microservice name '%s' doesn't match to '%s'",
+				ConfigClient.Params["service_name"].(string), service))
 			resp.Error = 1
 			resp.Data["msg"] = fmt.Sprintf("microservice name '%s' doesn't match to '%s'",
 				ConfigClient.Params["service_name"].(string), service)
@@ -871,8 +862,8 @@ func (a *Action) ExecContract(ctx *gin.Context, req RequestData) (object.Object,
 func getConnectionString() string {
 	// Paramètres de connexion (à adapter ou mettre dans des variables d'environnement)
 	if Db_connect_params == nil {
-		log.Fatalf("The parameters involved in the connection to the database are not defined.")
-		return ""
+		slog.Error("The parameters involved in the connection to the database are not defined.")
+		os.Exit(1)
 	}
 
 	// Chaîne de connexion PostgreSQL
@@ -895,13 +886,14 @@ func getJwt(ctx *gin.Context) (string, error) {
 
 	return tokenString, nil
 }
-func HandleBrokerMessage(url, topic, subj string, data []byte) bool {
+func HandleBrokerMessage(url, topic, subj, token string, data []byte) bool {
 	// find the right knowled which matches with the subject
 	// load it and transmit to it the data
 	// run it and right eventually the errors status in the logfile
+
 	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
 	if err != nil {
-		log.Printf("Nsina: Error when trying to retrieve the action from the database : %v", err)
+		slog.Error("Nsina: Error when trying to retrieve the action from the database", "error", err)
 		return false
 	}
 	defer db.Close()
@@ -909,7 +901,7 @@ func HandleBrokerMessage(url, topic, subj string, data []byte) bool {
 	cfg := make(map[string]interface{})
 	err = json.Unmarshal(data, &cfg)
 	if err != nil {
-		log.Println(err)
+		slog.Error("Nsina: Error when trying to consume data from the broker", "broker", url, "data", string(data), "error", err)
 		return false
 	}
 	v := make(map[string]object.Object)
@@ -925,7 +917,7 @@ func HandleBrokerMessage(url, topic, subj string, data []byte) bool {
 	 WHERE (EV.URL=='%s' AND EV.SUBJECT=='%s)`, strings.ToLower(url), strings.ToLower(topic)))
 
 	if err != nil {
-		log.Println(err)
+		slog.Error("Consume data: No contract found", "url", url, "subject", topic, "error", err)
 		return false
 	}
 	if rows.Next() {
@@ -934,11 +926,7 @@ func HandleBrokerMessage(url, topic, subj string, data []byte) bool {
 		rows.Scan(&qry, &req.Proc, &req.Knowledge, &req.Role)
 		w := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(w)
-		// val, err := json.Marshal(req)
-		// if err != nil {
-		// 	log.Println(err)
-		// 	return false
-		// }
+		ctx.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 		body := new(bytes.Buffer)
 		mw := multipart.NewWriter(body)
 		defer mw.Close()
@@ -953,15 +941,85 @@ func HandleBrokerMessage(url, topic, subj string, data []byte) bool {
 			StdAction.secu.getFilter, v, false, false,
 			serviceExists, serviceSignature, StdAction.eval, emit)
 		if erro != nil {
-			log.Println("Too many errors occured while trying to treat the subject")
+			slog.Error("Consume data: Too many errors occured while trying to treat the subject",
+				"url", url, "subject", topic, "error", erro)
 			return false
 		}
 		if result.Type() == object.ERROR_OBJ {
-			log.Println(result.Inspect())
+			slog.Error("Consume data: Interpretor error", "url", url, "subject", topic,
+				"error", result.Inspect())
 			return false
 		}
 		return true
 	}
-	log.Println("No subject handler found")
+	slog.Warn("Consume data: No subject handler found", "url", url, "subject", topic)
 	return false
+}
+func emit(ctx *gin.Context, subject string, message any) bool {
+	if Emit == nil {
+		return false
+	}
+	select {
+	case <-ctx.Done():
+		slog.Warn("Publish message cancled by the user", "subject", subject)
+		return false
+	default:
+		url, err := findURL(subject)
+		if err != nil {
+			slog.Error("Publish message: Can't find url", "subject", subject, "error", err)
+			return false
+		}
+		var msg []byte
+		if t, ok := message.(*object.Struct); ok {
+			msg, err = json.Marshal(t)
+			if err != nil {
+				slog.Error("Publish message: can't treat data", "subject", subject, "data", message, "error", err)
+				return false
+			}
+		}
+		if t, ok := message.(*object.Array); ok {
+			msg, err = json.Marshal(t)
+			if err != nil {
+				slog.Error("Publish message: can't treat data", "subject", subject, "data", message, "error", err)
+				return false
+			}
+		}
+		switch t := message.(type) {
+		case *object.String, *object.Integer, *object.Float,
+			*object.Boolean, *object.Date, *object.Duration:
+			msg, err = json.Marshal(t)
+			if err != nil {
+				slog.Error("Publish message: can't treat data", "subject", subject, "data", message, "error", err)
+				return false
+			}
+		default:
+			slog.Error("Publish message: Invalid broker data type", "subject", subject, "data", message, "error", err)
+			return false
+		}
+		token, err := authMiddleware(ctx)
+		if err != nil {
+			slog.Error("Publish message:", "subject", subject, "data", message, "error", err)
+			return false
+		}
+		ok, err := Emit(url, subject, string(msg), token)
+		if err != nil {
+			slog.Error("Publish message:", "subject", subject, "data", message, "error", err)
+			return false
+		}
+		return ok
+	}
+}
+
+func authMiddleware(c *gin.Context) (string, error) {
+	// 1. Get the header
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		return "", fmt.Errorf("Authorization header required")
+	}
+	// 2. Remove "Bearer " prefix
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+	if tokenString == "" {
+		return "", fmt.Errorf("Invalid Authorization header format")
+	}
+	return tokenString, nil
 }

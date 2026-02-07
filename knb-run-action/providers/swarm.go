@@ -82,8 +82,22 @@ func (c *SwarmProvider) registerService(scf SwarmConsulConfig) error {
 	}
 	return err
 }
-func (c *SwarmProvider) subscrib(url, topic string) error {
-	return registration.Subscrib(url, topic)
+func (c *SwarmProvider) subscrib(url, topic, kind string) error {
+	switch strings.ToLower(kind) {
+	case "nats":
+		webapi.Emit = registration.NatsPublish
+		go registration.NatsSubscrib(url, topic)
+		return nil
+	case "kafka":
+		webapi.Emit = registration.KafkaPublish
+		go registration.KafkaSubscrib(url, topic)
+		return nil
+	case "rabbit":
+		webapi.Emit = registration.RabbitMQPublish
+		go registration.RabbitMQSubscrib(url, topic)
+		return nil
+	}
+	return fmt.Errorf("Invalid kind value : %s", kind)
 }
 func (c *SwarmProvider) Launch() {
 	pwd, err := c.readSecret("db_config")
@@ -91,8 +105,6 @@ func (c *SwarmProvider) Launch() {
 		slog.Error(fmt.Sprintf("Invalid config file name: %s", pwd))
 		os.Exit(1)
 	}
-	webapi.Emit = registration.Emit
-
 	// 1. Starts the knb service
 	webapi.Start(int(webapi.ConfigClient.Params["service_port"].(uint64))) //port a lire
 
@@ -104,8 +116,15 @@ func (c *SwarmProvider) Launch() {
 		webapi.Brokers = make([]webapi.BrokerInfo, len(c.SysConf.Nats.Brokers))
 		copy(webapi.Brokers, c.SysConf.Nats.Brokers)
 		for _, broker := range webapi.Brokers {
-			go c.subscrib(broker.URL, broker.Topic)
+			err = c.subscrib(broker.URL, broker.Topic, broker.Kind)
+			if err != nil {
+				break
+			}
 		}
+	}
+	if err != nil {
+		slog.Error("Error while trying to subscrib", "error", err)
+		os.Exit(1)
 	}
 	slog.Info("The microservice is running",
 		"service_name", c.svcConf.ServiceName,

@@ -11,7 +11,7 @@ type ConfigProvider interface {
 	// GetSecret(name string) (string, error)
 	registerService(c SwarmConsulConfig) error
 	ReadConfig() error
-	subscrib(url, topic string) error
+	subscrib(url, topic, kind string) error
 	readSecret(name string) (string, error)
 	Launch()
 }

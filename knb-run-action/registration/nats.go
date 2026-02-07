@@ -9,7 +9,7 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-func Subscrib(url, topic string) error {
+func NatsSubscrib(url, topic string) error {
 	nc, err := nats.Connect(url)
 	if err != nil {
 		slog.Error("The subscrition is not possible", "error", err)
@@ -28,7 +28,16 @@ func Subscrib(url, topic string) error {
 		if len(t) > 1 {
 			msg = strings.Join(t[1:], ".")
 		}
-		if webapi.HandleBrokerMessage(nc.ConnectedUrl(), fmt.Sprintf("%s.*", t[0]), msg, m.Data) {
+
+		// 1. Extraire le token, le valider et l'injecter dans la fonction
+		token, ok := m.Header["x-auth-token"]
+
+		if !ok || !webapi.ValidateToken(strings.Join(token, ""),
+			webapi.ConfigClient.Params["jwt_key"].(string)) {
+			slog.Warn("⚠️ Rejected message : Invalide Token")
+			m.Nak() // Rejeter sans remettre en file
+		}
+		if webapi.HandleBrokerMessage(nc.ConnectedUrl(), fmt.Sprintf("%s.*", t[0]), msg, strings.Join(token, ""), m.Data) {
 			m.Ack()
 		}
 	}, nats.Durable(webapi.ConfigClient.Params["service_name"].(string)), nats.ManualAck())
@@ -41,7 +50,7 @@ func Subscrib(url, topic string) error {
 	select {} //gader le programme actif
 }
 
-func Emit(url string, subj string, message string) (bool, error) {
+func NatsPublish(url, subj, message, token string) (bool, error) {
 	//Penser a integrer le jwt token de l'appelant
 	con, err := nats.Connect(url)
 	if err != nil {

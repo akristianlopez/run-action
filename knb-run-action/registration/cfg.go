@@ -43,11 +43,14 @@ func WatchConfig(addr, key string) (*webapi.Config, error) {
 				slog.Warn("YAML invalide", "error", err)
 				return
 			}
-			webapi.Db_connect_params = &webapi.Db_access_params{}
+			if webapi.Db_connect_params == nil {
+				webapi.Db_connect_params = &webapi.Db_access_params{}
+			}
 			webapi.Db_connect_params.Address = conf.Database.Address
 			webapi.Db_connect_params.Port = int64(conf.Database.Port)
 			webapi.Db_connect_params.Userid = conf.Database.Usrid
 			webapi.Db_connect_params.Name = conf.Database.Name
+			webapi.Db_connect_params.Kind = conf.Database.Kind
 
 			// // Load consul configuration
 			// webapi.ConfigClient.Params["discovery_service_address"] = conf.Consul.URL

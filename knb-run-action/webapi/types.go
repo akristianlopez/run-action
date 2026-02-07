@@ -24,8 +24,8 @@ type Config struct {
 	Database struct {
 		Address string `yaml:"url" json:"url"`
 		Port    int    `yaml:"port" json:"port"`
-		Usrid   string `yaml:"username" json:"username"`
-		Name    string `yaml:"database" json:"database"`
+		Usrid   string `yaml:"usrid" json:"usrid"`
+		Name    string `yaml:"name" json:"name"`
 		Kind    string `yaml:"kind" json:"kind"`
 	} `yaml:"database" json:"database"`
 	Nats struct {
@@ -76,5 +76,6 @@ type Default struct {
 } //`yaml:"default" json:"default"`
 type BrokerInfo struct {
 	URL   string `yaml:"url" json:"url"`
+	Kind  string `yaml:"kind" json:"kind"`
 	Topic string `yaml:"topic" json:"topic"`
 } //`yaml:"default" json:"default"`
