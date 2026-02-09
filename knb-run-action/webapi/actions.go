@@ -124,13 +124,17 @@ type Claims struct {
 }
 
 type security struct {
-	claims   *Claims
-	filter   map[string]ast.Expression
-	excluded map[string]bool
-	context  map[string]map[string][]string
+	claims     *Claims
+	filter     map[string]ast.Expression
+	excluded   map[string]bool
+	context    map[string]map[string][]string
+	isInitMode bool
 }
 
 func (sec *security) IsHandlabledField(ctx *gin.Context, table, field string) bool {
+	if sec.isInitMode {
+		return true
+	}
 	req := &RequestData{}
 	if err := ctx.BindJSON(req); err != nil {
 		return false
@@ -143,6 +147,9 @@ func (sec *security) IsHandlabledField(ctx *gin.Context, table, field string) bo
 	return true
 }
 func (sec *security) IsHandlabled(ctx *gin.Context, table, field, operation string) (bool, string) {
+	if sec.isInitMode {
+		return true, ""
+	}
 	req := &RequestData{}
 	if err := ctx.BindJSON(req); err != nil {
 		return false, ""
@@ -164,6 +171,10 @@ func (sec *security) IsHandlabled(ctx *gin.Context, table, field, operation stri
 	return false, ""
 }
 func (sec *security) hasFilter(ctx *gin.Context, table string) bool {
+	if sec.isInitMode {
+		return false
+	}
+
 	req := &RequestData{}
 	if err := ctx.BindJSON(req); err != nil {
 		return false
@@ -241,12 +252,14 @@ func (sec *security) load() (bool, error) {
 		return false, fmt.Errorf("Nsina: Error when trying to retrieve the action from the database : %v", err)
 	}
 	defer db.Close()
-	act := action.NewAction(nil, db, Db_connect_params.Kind)
+	sec.isInitMode = false
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	act := action.NewAction(c, db, Db_connect_params.Kind)
 	// check wether the sysobject exist in the database, otherwise reinitialize the database
 	// two databases are allowed : postgresql and mariadb
 	sql := ""
 	switch strings.ToLower(Db_connect_params.Kind) {
-	case "postgresql", "postgres":
+	case "postgres":
 		sql = "select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','TEXT','CONTRACT','EVENT') and table_catalog ='knb_catalog'"
 	case "mariadb":
 		sql = "select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','TEXT','CONTRACT','EVENT') and table_catalog ='knb_catalog'"
@@ -263,6 +276,7 @@ func (sec *security) load() (bool, error) {
 		cpt++
 	}
 	if cpt < 1 || cpt != 13 {
+		sec.isInitMode = true
 		sql = genScriptInit()
 		val, err := act.Interpret(sql, sec.IsHandlabled, sec.hasFilter, sec.getFilter, nil, true, true,
 			serviceExists, serviceSignature, nil, emit)

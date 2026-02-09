@@ -43,6 +43,12 @@ func WatchConfig(addr, key string) (*webapi.Config, error) {
 				slog.Warn("YAML invalide", "error", err)
 				return
 			}
+			db_par, err := Read(fmt.Sprintf("http://%s", conf.Vault.URL), conf.Vault.Token, conf.Vault.Path /*"login", "password"*/) //"cubbyhole/webservice/db_access"
+			if err != nil {
+				slog.Error("Problem related to the database connection", "error", err.Error())
+				os.Exit(1)
+			}
+
 			if webapi.Db_connect_params == nil {
 				webapi.Db_connect_params = &webapi.Db_access_params{}
 			}
@@ -51,7 +57,7 @@ func WatchConfig(addr, key string) (*webapi.Config, error) {
 			webapi.Db_connect_params.Userid = conf.Database.Usrid
 			webapi.Db_connect_params.Name = conf.Database.Name
 			webapi.Db_connect_params.Kind = conf.Database.Kind
-
+			webapi.Db_connect_params.Password = db_par
 			// // Load consul configuration
 			// webapi.ConfigClient.Params["discovery_service_address"] = conf.Consul.URL
 			// webapi.ConfigClient.Params["check_health_interval"] = conf.Consul.Health_check_interval
@@ -65,13 +71,7 @@ func WatchConfig(addr, key string) (*webapi.Config, error) {
 
 			webapi.Running_mode = webapi.ConfigClient.Params["service_kind"].(string)
 
-			db_par, err := Read(fmt.Sprintf("http://%s", conf.Vault.URL), conf.Vault.Token, conf.Vault.Path /*"login", "password"*/) //"cubbyhole/webservice/db_access"
-			if err != nil {
-				slog.Error("Problem related to the database connection", "error", err.Error())
-				os.Exit(1)
-			}
-			webapi.Db_connect_params.Password = db_par
-			slog.Info(fmt.Sprintf("Change detected at index %d: %s = %s\n", idx, kv.Key, string(kv.Value)))
+			slog.Info(fmt.Sprintf("Change detected at index %d: %s = %s\n", idx, kv.Key, conf.Database.Address))
 		} else {
 			slog.Warn("Unexpected data type", "data", data)
 		}
