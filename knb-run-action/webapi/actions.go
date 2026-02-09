@@ -278,9 +278,9 @@ func (sec *security) load() (bool, error) {
 	if cpt < 1 || cpt != 13 {
 		sec.isInitMode = true
 		sql = genScriptInit()
-		val, err := act.Interpret(sql, sec.IsHandlabled, sec.hasFilter, sec.getFilter, nil, true, true,
+		val, err := act.Interpret(sql, sec.IsHandlabled, sec.hasFilter, sec.getFilter, nil, false, false,
 			serviceExists, serviceSignature, nil, emit)
-		if err != nil {
+		if len(err) > 0 {
 			v, _ := json.Marshal(err)
 			slog.Error("Initialization of the system security", "source", sql, "error", string(v))
 			return false, fmt.Errorf("Too many error occured")
