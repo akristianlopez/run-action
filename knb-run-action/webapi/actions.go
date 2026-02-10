@@ -260,9 +260,9 @@ func (sec *security) load() (bool, error) {
 	sql := ""
 	switch strings.ToLower(Db_connect_params.Kind) {
 	case "postgres":
-		sql = "select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','TEXT','CONTRACT','EVENT') and table_catalog ='knb_catalog'"
+		sql = fmt.Sprintf("select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','LABEL','CONTRACT','EVENT') and table_catalog ='%s'", Db_connect_params.Name)
 	case "mariadb":
-		sql = "select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','TEXT','CONTRACT','EVENT') and table_catalog ='knb_catalog'"
+		sql = fmt.Sprintf("select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','LABEL','CONTRACT','EVENT') and table_catalog ='%s'", Db_connect_params.Name)
 	default:
 		slog.Error("Invalid database kind", "kind", Db_connect_params.Kind)
 		os.Exit(1)
@@ -291,7 +291,7 @@ func (sec *security) load() (bool, error) {
 		}
 		return true, nil
 	}
-	rows, err = db.Query("SELECT P.ROLE,C.PROC,C.GOAL,C.OBJECT,C.TRANS FROM CONTEXT C INNER JOIN PROCESS P ON (P.CODE== C.PROC)")
+	rows, err = db.Query("SELECT P.ROLE,C.PROC,C.GOAL,C.OBJECT,C.TRANS FROM CONTEXT C INNER JOIN PROCESS P ON (P.CODE= C.PROC)")
 	if err != nil {
 		return false, err
 	}
@@ -321,7 +321,7 @@ func (sec *security) load() (bool, error) {
 	}
 
 	// load filter
-	rows, err = db.Query("SELECT P.ROLE, F.PROC, F.GOAL, F.OBJECT, F.EXPRESSSION FROM FILTER F INNER JOIN PROCESS P ON (P.CODE== F.PROC)")
+	rows, err = db.Query("SELECT P.ROLE, F.PROC, F.GOAL, F.OBJECT, F.EXPRESSSION FROM FILTER F INNER JOIN PROCESS P ON (P.CODE= F.PROC)")
 	if err != nil {
 		return false, err
 	}
@@ -345,7 +345,7 @@ func (sec *security) load() (bool, error) {
 	}
 
 	// loading of excluded fields
-	rows, err = db.Query("SELECT P.ROLE, E.PROC, E.GOAL, E.OBJECT, E.FIELD FROM EXCLUDED E INNER JOIN PROCESS P ON (P.CODE== E.PROC)")
+	rows, err = db.Query("SELECT P.ROLE, E.PROC, E.GOAL, E.OBJECT, E.FIELD FROM EXCLUDED E INNER JOIN PROCESS P ON (P.CODE= E.PROC)")
 	if err != nil {
 		return false, err
 	}
