@@ -105,10 +105,6 @@ func (c *SwarmProvider) Launch() {
 		slog.Error(fmt.Sprintf("Invalid config file name: %s", pwd))
 		os.Exit(1)
 	}
-	// 1. Starts the knb service
-	webapi.Start(int(webapi.ConfigClient.Params["service_port"].(uint64))) //port a lire
-
-	// 2. Register knb service to the consul service
 	go c.registerService(*c.svcConf)
 	webapi.ReadSecret = c.readSecret
 	// 3. Subscrib to the topics from broker
@@ -130,6 +126,11 @@ func (c *SwarmProvider) Launch() {
 		"service_name", c.svcConf.ServiceName,
 		"service_port", webapi.ConfigClient.Params["service_port"].(uint64),
 		"service_kind", webapi.ConfigClient.Params["service_kind"].(string))
+
+	// 1. Starts the knb service
+	webapi.Start(int(webapi.ConfigClient.Params["service_port"].(uint64))) //port a lire
+
+	// 2. Register knb service to the consul service
 	// le fichier de configuration doit comporter les information sur le brokers
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
