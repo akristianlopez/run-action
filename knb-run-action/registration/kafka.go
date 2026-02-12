@@ -34,7 +34,7 @@ func KafkaPublish(url, subj, message, token string) (bool, error) {
 	return true, nil
 }
 
-func KafkaSubscrib(brokerAddr string, topic string) {
+func KafkaSubscrib(brokerAddr string, topic string) error {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  []string{brokerAddr},
 		GroupID:  "knb-run-group", // Toutes les répliques avec le même ID se partagent le travail
@@ -50,7 +50,7 @@ func KafkaSubscrib(brokerAddr string, topic string) {
 		m, err := reader.ReadMessage(context.Background())
 		if err != nil {
 			slog.Error("❌ Erreur lecture Kafka", "error", err)
-			break
+			return err
 		}
 
 		// --- EXTRACTION ET VALIDATION DU TOKEN ---

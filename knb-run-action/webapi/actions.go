@@ -418,13 +418,13 @@ func (a *Action) FillToken(ctx *gin.Context) (bool, error) {
 
 	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
 		a.secu = &security{claims: claims}
-		a.fillSecurity(ctx)
+		a.fillSecurity()
 		return true, nil
 	}
 	return false, errors.New("Invalid token")
 }
 
-func (a *Action) fillSecurity(ctx *gin.Context) (string, error) {
+func (a *Action) fillSecurity() (string, error) {
 	// a.secu = &security{}
 	return "", nil
 }

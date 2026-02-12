@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/akristianlopez/run-action/knb-run-action/webapi"
 	"github.com/nats-io/nats.go"
 )
 
 func NatsSubscrib(url, topic string) error {
-	nc, err := nats.Connect(url)
+	nc, err := nats.Connect(url, nats.Name(webapi.ConfigClient.Params["service_name"].(string)),
+		nats.PingInterval(20*time.Second), nats.MaxPingsOutstanding(5))
 	if err != nil {
 		slog.Error("The subscrition is not possible", "error", err)
 		return err
@@ -21,8 +23,25 @@ func NatsSubscrib(url, topic string) error {
 		slog.Error("The subscrition is not possible", "error", err)
 		return err
 	}
+	// Source - https://stackoverflow.com/a/71571236
+	// Posted by Shubham Dixit
+	// Retrieved 2026-02-11, License - CC BY-SA 4.0
+
+	tp := topic
+	if !strings.HasSuffix(tp, ".*") {
+		tp = fmt.Sprintf("%s.*", topic)
+	}
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     webapi.ConfigClient.Params["service_name"].(string),
+		Subjects: []string{tp},
+	})
+	if err != nil && !strings.Contains(err.Error(), "already in use") {
+		slog.Error("The subscrition is not possible", "error", err)
+		return err
+	}
+	err = nil
 	//webapi.Emit=Emit
-	sub, err := js.Subscribe(topic, func(m *nats.Msg) {
+	sub, err := js.Subscribe(tp, func(m *nats.Msg) {
 		t := strings.Split(m.Subject, ".")
 		msg := t[0]
 		if len(t) > 1 {

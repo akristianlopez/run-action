@@ -49,7 +49,7 @@ func (c *StandAloneProvider) subscrib(url, topic, kind string) error {
 		return nil
 	case "rabbit":
 		webapi.Emit = registration.RabbitMQPublish
-		go registration.RabbitMQSubscrib(url, topic)
+		registration.RabbitMQSubscrib(url, topic)
 		return nil
 	}
 	return fmt.Errorf("Invalid kind value : %s", kind)
@@ -245,23 +245,22 @@ func (c *StandAloneProvider) Launch() {
 			slog.Error(e.Error())
 			os.Exit(1)
 		}
-		webapi.Start(int(webapi.ConfigClient.Params["service_port"].(uint64))) //port a lire
+		// Subscription to Nats jetstream topics
+		if len(c.conf.Nats.Brokers) > 0 {
+			webapi.Brokers = make([]webapi.BrokerInfo, len(c.conf.Nats.Brokers))
+			copy(webapi.Brokers, c.conf.Nats.Brokers)
+			for _, broker := range c.conf.Nats.Brokers {
+				err := c.subscrib(broker.URL, broker.Topic, broker.Kind)
+				if err != nil {
+					slog.Error("Error while trying to subscrib", "error", err)
+					os.Exit(1)
+				}
+			}
+		}
 		slog.Info(fmt.Sprintf("The microservice '%s' is running on port %d in '%s' mode", n, webapi.ConfigClient.Params["service_port"].(uint64),
 			webapi.ConfigClient.Params["service_kind"].(string)))
 		webapi.ReadSecret = nil
-
-	}
-	// Subscription to Nats jetstream topics
-	if len(c.conf.Nats.Brokers) > 0 {
-		webapi.Brokers = make([]webapi.BrokerInfo, len(c.conf.Nats.Brokers))
-		copy(webapi.Brokers, c.conf.Nats.Brokers)
-		for _, broker := range c.conf.Nats.Brokers {
-			err := c.subscrib(broker.URL, broker.Topic, broker.Kind)
-			if err != nil {
-				slog.Error("Error while trying to subscrib", "error", err)
-				os.Exit(1)
-			}
-		}
+		webapi.Start(int(webapi.ConfigClient.Params["service_port"].(uint64))) //port a lire
 	}
 }
 
