@@ -13,7 +13,7 @@ import (
 
 // var token string
 
-func Register(port uint64, name, addr, laddr, kind string) (string, error) {
+func Register(port uint64, name, addr, laddr, kind string, tags []string) (string, error) {
 	config := api.DefaultConfig()
 	config.Address = addr
 	consulClient, err := api.NewClient(config)
@@ -38,6 +38,7 @@ func Register(port uint64, name, addr, laddr, kind string) (string, error) {
 			Timeout:                        fmt.Sprintf("%ds", webapi.ConfigClient.Params["timeout"].(int)),               //Timeout 30 secondes
 			DeregisterCriticalServiceAfter: fmt.Sprintf("%ds", webapi.ConfigClient.Params["deregistry_delay_time"].(int)), //Se desenregistrer apres 60 secondes si le service est critique
 		},
+		Tags: tags,
 	}
 	err = consulClient.Agent().ServiceRegister(registration)
 	if err != nil {

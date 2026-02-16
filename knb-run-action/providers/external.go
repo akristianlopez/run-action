@@ -240,7 +240,7 @@ func (c *StandAloneProvider) Launch() {
 			webapi.ConfigClient.Params["service_name"].(string),
 
 			webapi.ConfigClient.Params["discovery_service_address"].(string), c.ip,
-			webapi.ConfigClient.Params["service_kind"].(string))
+			webapi.ConfigClient.Params["service_kind"].(string), c.conf.Consul.Tags)
 		if e != nil {
 			slog.Error(e.Error())
 			os.Exit(1)

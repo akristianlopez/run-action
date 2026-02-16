@@ -37,10 +37,11 @@ type Config struct {
 		Token string `yaml:"token" json:"token"`
 	} `yaml:"vault" json:"vault"`
 	Consul struct {
-		URL                   string `yaml:"url" json:"address"`
-		Health_check_interval int    `yaml:"check_delay" json:"check_delay"`
-		Timeout               int    `yaml:"timeout" json:"timeout"`
-		Deregistry_delay_time int    `yaml:"deregistry_delay" json:"deregistry_delay"`
+		URL                   string   `yaml:"url" json:"address"`
+		Health_check_interval int      `yaml:"check_delay" json:"check_delay"`
+		Timeout               int      `yaml:"timeout" json:"timeout"`
+		Deregistry_delay_time int      `yaml:"deregistry_delay" json:"deregistry_delay"`
+		Tags                  []string `yaml:"tags" json:"tags"`
 	} `yaml:"consul" json:"consul"`
 }
 type ConfigEx struct {
@@ -55,10 +56,11 @@ type ConfigEx struct {
 		Brokers []BrokerInfo `yaml:"brokers" json:"brokers"`
 	} `yaml:"kafka" json:"kafka"`
 	Consul struct {
-		URL                   string `yaml:"url" json:"address"`
-		Health_check_interval int    `yaml:"check_delay" json:"check_delay"`
-		Timeout               int    `yaml:"timeout" json:"timeout"`
-		Deregistry_delay_time int    `yaml:"deregistry_delay" json:"deregistry_delay"`
+		URL                   string   `yaml:"url" json:"address"`
+		Health_check_interval int      `yaml:"check_delay" json:"check_delay"`
+		Timeout               int      `yaml:"timeout" json:"timeout"`
+		Deregistry_delay_time int      `yaml:"deregistry_delay" json:"deregistry_delay"`
+		Tags                  []string `yaml:"tags" json:"tags"`
 	} `yaml:"consul" json:"consul"`
 }
 type ClientConfig struct {
