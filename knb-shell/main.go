@@ -22,7 +22,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	// 2. Définition des paramètres
-	portStr := getEnv("PORT", "8080")
+	portStr := getEnv("PORT", "7500") //8080
 	defaultPort, _ := strconv.Atoi(portStr)
 
 	portPtr := flag.Int("port", defaultPort, "Port d'écoute du serveur")
@@ -30,6 +30,7 @@ func main() {
 	kvPathPtr := flag.String("kvpath", getEnv("CONFIG_PATH", "knb/services/shell"), "Chemin de la config dans Consul KV")
 	serviceName := getEnv("SERVICE_NAME", "knb-shell")
 	serviceDomain := getEnv("SERVICE_DOMAIN", "wosa.local")
+	slog.Info("Démarrage du Shell KNB", "port", portStr, "service_name", serviceName, "service_domain", serviceDomain)
 	flag.Parse()
 
 	// 3. Initialisation du client Consul
