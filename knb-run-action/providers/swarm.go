@@ -128,7 +128,7 @@ func (c *SwarmProvider) Launch() {
 		"service_kind", webapi.ConfigClient.Params["service_kind"].(string))
 
 	// 1. Starts the knb service
-	webapi.Start(int(webapi.ConfigClient.Params["service_port"].(uint64))) //port a lire
+	webapi.Start(c.svcConf.ServiceName, int(webapi.ConfigClient.Params["service_port"].(uint64))) //port a lire
 
 	// 2. Register knb service to the consul service
 	// le fichier de configuration doit comporter les information sur le brokers

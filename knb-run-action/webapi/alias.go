@@ -81,8 +81,16 @@ func checkAction(ctx *gin.Context, s Action) {
 		ctx.JSON(http.StatusOK, res)
 	}
 }
-func health(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, "OK")
+func health(ctx *gin.Context, serviceID string) {
+	w := ctx.Writer
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "UP",
+		"message": "Healthbite OK",
+		"service": serviceID,
+	})
+	// ctx.JSON(http.StatusOK, "OK")
 }
 
 // func dataHandler(ctx *gin.Context) {

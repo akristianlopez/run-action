@@ -38,8 +38,14 @@ func Register(port uint64, name, addr, laddr, kind string, tags []string) (strin
 			Timeout:                        fmt.Sprintf("%ds", webapi.ConfigClient.Params["timeout"].(int)),               //Timeout 30 secondes
 			DeregisterCriticalServiceAfter: fmt.Sprintf("%ds", webapi.ConfigClient.Params["deregistry_delay_time"].(int)), //Se desenregistrer apres 60 secondes si le service est critique
 		},
-		Tags: tags,
 	}
+	if len(tags) > 0 {
+		for _, tag := range tags {
+			tg := strings.ReplaceAll(tag, "{{name}}", name)
+			registration.Tags = append(registration.Tags, strings.ReplaceAll(tg, "{{port}}", fmt.Sprintf("%d", port)))
+		}
+	}
+
 	err = consulClient.Agent().ServiceRegister(registration)
 	if err != nil {
 		slog.Error("Error during the service registration", "error", err)

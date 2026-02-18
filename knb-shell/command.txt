@@ -1,0 +1,1 @@
+docker build  -t kristian2022/knb-shell:1.0 --push .

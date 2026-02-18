@@ -2,11 +2,12 @@ module github.com/akristianlopez/run-action/knb-shell
 
 go 1.25.5
 
+require github.com/hashicorp/consul/api v1.33.2
+
 require (
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
-	github.com/hashicorp/consul/api v1.33.2 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v1.5.0 // indirect
@@ -20,4 +21,5 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	golang.org/x/exp v0.0.0-20250808145144-a408d31f581a // indirect
 	golang.org/x/sys v0.35.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

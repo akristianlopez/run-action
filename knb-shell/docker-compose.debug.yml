@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  knb-shell-debug:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: knb-shell:debug
+    container_name: knb-shell-debug
+    ports:
+      - "8080:8080"   # Port de votre application Gin
+      - "40000:40000" # Port pour la connexion VS Code -> Delve
+    environment:
+      - PORT=8080
+      - SERVICE_NAME=shell
+      - CONSUL_ADDR=http://consul-server:8500
+      - GIN_MODE=debug
+    networks:
+      - public_net
+
+networks:
+  public_net:
+    external: true

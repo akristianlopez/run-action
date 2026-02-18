@@ -1,0 +1,34 @@
+# --- ÉTAPE 1 : Build du Frontend (Vite) ---
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app/web
+COPY ./web/package*.json ./
+RUN npm install
+COPY ./web/ ./
+RUN npm run build
+
+# --- ÉTAPE 2 : Image de Développement Go (avec Debugger) ---
+FROM golang:1.25.5-alpine
+WORKDIR /app
+
+# Installation de Delve (débogueur) et des outils de build
+RUN apk add --no-cache git ca-certificates build-base && \
+    go install github.com/go-delve/delve/cmd/dlv@latest
+
+# Gestion des dépendances Go
+COPY go.mod go.sum* ./
+RUN go mod download
+
+# Copie du code source complet
+COPY . .
+
+# Copie du frontend pour que Gin puisse servir les fichiers statiques
+COPY --from=frontend-builder /app/web/dist ./ui/dist
+
+# Compilation SANS optimisations pour le débogage
+RUN go build -gcflags="all=-N -l" -o knb-shell-debug main.go
+
+# Exposition : 8080 (App) et 40000 (Debug)
+EXPOSE 8080 40000
+
+# Lancement via Delve pour VS Code
+ENTRYPOINT ["dlv", "--listen=:40000", "--headless=true", "--api-version=2", "--accept-multiclient", "exec", "./knb-shell-debug"]

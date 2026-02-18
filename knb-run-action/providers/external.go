@@ -260,7 +260,7 @@ func (c *StandAloneProvider) Launch() {
 		slog.Info(fmt.Sprintf("The microservice '%s' is running on port %d in '%s' mode", n, webapi.ConfigClient.Params["service_port"].(uint64),
 			webapi.ConfigClient.Params["service_kind"].(string)))
 		webapi.ReadSecret = nil
-		webapi.Start(int(webapi.ConfigClient.Params["service_port"].(uint64))) //port a lire
+		webapi.Start(webapi.ConfigClient.Params["service_name"].(string), int(webapi.ConfigClient.Params["service_port"].(uint64))) //port a lire
 	}
 }
 

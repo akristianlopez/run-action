@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Styles globaux personnalisés pour l'intégration Micro-frontend */
+:root {
+font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+line-height: 1.5;
+font-weight: 400;
+color-scheme: light dark;
+background-color: transparent;
+}
+
+body {
+margin: 0;
+display: flex;
+place-content: center;
+min-width: 320px;
+min-height: 100vh;
+background-color: transparent; /* Permet au Shell de gérer le fond */
+}
+
+#app {
+width: 100%;
+}
+
+/* Transitions fluides pour les éléments interactifs */
+.transition-all {
+transition-property: all;
+transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+transition-duration: 150ms;
+}
