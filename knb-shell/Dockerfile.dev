@@ -4,31 +4,36 @@ WORKDIR /app/web
 COPY ./web/package*.json ./
 RUN npm install
 COPY ./web/ ./
+# Génère les fichiers dans /app/web/dist
 RUN npm run build
 
 # --- ÉTAPE 2 : Image de Développement Go (avec Debugger) ---
-FROM golang:1.25.5-alpine
+# Utilisation de l'image Debian standard pour une compatibilité parfaite avec Delve
+FROM golang:1.25.5
 WORKDIR /app
 
-# Installation de Delve (débogueur) et des outils de build
-RUN apk add --no-cache git ca-certificates build-base && \
-    go install github.com/go-delve/delve/cmd/dlv@latest
+# Installation de Delve (le débogueur Go)
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
 
 # Gestion des dépendances Go
 COPY go.mod go.sum* ./
 RUN go mod download
 
-# Copie du code source complet
+# Copie du code source complet du backend
 COPY . .
 
-# Copie du frontend pour que Gin puisse servir les fichiers statiques
+# Copie du frontend compilé
+# On s'assure que le chemin correspond à ce que le code Go attend (./ui/dist)
+# Note : Vite place généralement remoteEntry.js à la racine de 'dist'
 COPY --from=frontend-builder /app/web/dist ./ui/dist
 
-# Compilation SANS optimisations pour le débogage
-RUN go build -gcflags="all=-N -l" -o knb-shell-debug main.go
+# Compilation SANS optimisations pour permettre l'inspection des variables
+# CGO_ENABLED=0 garantit un binaire statique compatible avec tous les environnements
+RUN CGO_ENABLED=0 go build -gcflags="all=-N -l" -o knb-shell-debug main.go
 
-# Exposition : 8080 (App) et 40000 (Debug)
+# Exposition : 8080 (Application) et 40000 (Débogueur)
 EXPOSE 8080 40000
 
-# Lancement via Delve pour VS Code
-ENTRYPOINT ["dlv", "--listen=:40000", "--headless=true", "--api-version=2", "--accept-multiclient", "exec", "./knb-shell-debug"]
+# Lancement via Delve
+# --log-output : rpc,server,debugger pour un diagnostic complet en cas de déconnexion
+ENTRYPOINT ["dlv", "--listen=:40000", "--headless=true", "--api-version=2", "--accept-multiclient", "--check-go-version=false", "--log", "--log-output=debugger,rpc,server", "exec", "./knb-shell-debug"]

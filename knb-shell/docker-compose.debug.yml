@@ -2,6 +2,10 @@ version: '3.8'
 
 services:
   knb-shell-debug:
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
     build:
       context: .
       dockerfile: Dockerfile.dev
