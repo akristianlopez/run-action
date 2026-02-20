@@ -1,0 +1,51 @@
+# --- ÉTAPE 1 : Build du Frontend (Vite) ---
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app/web
+COPY ./web/package*.json ./
+RUN npm install
+COPY ./web/ ./
+# Génère les fichiers dans /app/web/dist
+RUN npm run build
+
+# --- ÉTAPE 2 : Image de Développement Go (avec Debugger) ---
+# Utilisation de l'image Debian standard pour une compatibilité parfaite avec Delve
+FROM golang:1.25.5
+WORKDIR /app
+
+# Installation de Delve (le débogueur Go)
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
+RUN apt-get update 
+# RUN apt-get install iputils-ping
+
+# Gestion des dépendances Go
+COPY go.mod go.sum* ./
+RUN go mod download
+
+# Copie du code source complet du backend
+COPY . .
+
+# Copie du frontend compilé
+# On s'assure que le chemin correspond à ce que le code Go attend (./ui/dist)
+# Note : Vite place généralement remoteEntry.js à la racine de 'dist'
+COPY --from=frontend-builder /app/web/dist ./ui/dist
+
+# Compilation SANS optimisations pour permettre l'inspection des variables
+# CGO_ENABLED=0 garantit un binaire statique compatible avec tous les environnements
+# RUN CGO_ENABLED=0 go build -gcflags="all=-N -l" -o knb-shell-debug main.go
+# 1. Compilez le binaire en dehors du dossier /app (qui sera écrasé par le volume)
+RUN CGO_ENABLED=0 go build -gcflags="all=-N -l" -o knb-shell-debug main.go 
+
+# Exposition : 8080 (Application) et 40000 (Débogueur)
+EXPOSE 8080 40000
+
+# Lancement via Delve
+# --log-output : rpc,server,debugger pour un diagnostic complet en cas de déconnexion
+ENTRYPOINT ["dlv", "--listen=:40000", "--headless=true", "--api-version=2", "--accept-multiclient", "--check-go-version=false", "--log", "--log-output=debugger,rpc,lldbout,dap", "exec", "./knb-shell-debug"]
+# Ajoutez --continue pour que le programme se lance immédiatement au démarrage du conteneur
+# ENTRYPOINT ["dlv", "--listen=:40000", "--headless=true", "--api-version=2", "--accept-multiclient", "--check-go-version=false", "--log", "--continue", "exec", "/app/knb-shell-debug"]
+# Utilisez le chemin absolu /app/knb-shell-debug pour éviter toute ambiguïté
+# Forme recommandée pour éviter les erreurs d'arguments
+# ENTRYPOINT dlv --listen=:40000 --headless=true --api-version=2 --accept-multiclient --check-go-version=false --log --continue exec /knb-shell-debug
+# ENTRYPOINT dlv --listen=:40000 --headless=true --api-version=2 --accept-multiclient --log --continue exec /knb-shell-debug
+# On utilise le format tableau pour une transmission précise des arguments
+# ENTRYPOINT ["dlv", "--listen=:40000", "--headless=true", "--api-version=2", "--accept-multiclient", "--log", "--continue", "exec", "./knb-shell-debug"]

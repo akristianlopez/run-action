@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Connect to Docker (knb-shell)",
+            "type": "go",
+            "request": "attach",
+            "mode": "remote",
+            "port": 40000,
+            "debugAdapter": "dlv-dap",
+            // "preLaunchTask": "attach",
+            "host": "0.0.0.0",
+            "showLog": true,
+            "asRoot": true,
+            "substitutePath": [
+                {
+                    "from": "${workspaceFolder}",
+                    "to": "/app"
+                }
+            ]
+        }
+    ]
+}

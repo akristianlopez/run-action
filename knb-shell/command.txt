@@ -1,1 +1,5 @@
+## construction de l'image pour la prod
 docker build  -t kristian2022/knb-shell:1.0 --push .
+
+## construction de l'image pour les verification d'acces au resaeu
+docker-compose -f docker-compose.debug2.yml up --build

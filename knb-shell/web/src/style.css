@@ -30,3 +30,14 @@ transition-property: all;
 transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 transition-duration: 150ms;
 }
+
+
+/* On s'assure que le contenu injecté prend toute la place disponible */
+#content-area {
+min-height: 400px;
+width: 100%;
+}
+
+.menu-item {
+    @apply px-4 py-2 rounded-lg bg-slate-700 hover:bg-indigo-600 transition-colors text-sm font-medium;
+}

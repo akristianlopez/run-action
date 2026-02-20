@@ -49,7 +49,6 @@ ENV CONSUL_ADDR=consul-server:8500
 ENV SERVICE_NAME=knb-shell
 ENV SERVICE_DOMAIN=wosa.local
 ENV CONFIG_PATH=knb/services/shell
-ENV SERVICE_KIND=swarm
 
 # Exposition du port
 EXPOSE 8080

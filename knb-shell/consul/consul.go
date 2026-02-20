@@ -5,6 +5,7 @@ import (
 	"log"
 	"log/slog"
 	"net"
+	"os"
 	"strings"
 
 	"github.com/hashicorp/consul/api"
@@ -39,13 +40,18 @@ func NewClient(address string, logger *slog.Logger) (*Client, error) {
 
 // Register declares the service in Consul with Traefik tags
 func (c *Client) Register(name, id string, port int, tags *Labels) error {
+	serviceKind := os.Getenv("SERVICE_KIND")
+	url := GetLocalIP().String()
+	if strings.EqualFold(serviceKind, "swarm") {
+		url = name
+	}
 	registration := &api.AgentServiceRegistration{
 		ID:      id,
 		Name:    name,
 		Port:    port,
 		Address: GetLocalIP().String(),
 		Check: &api.AgentServiceCheck{
-			HTTP:     fmt.Sprintf("http://%s:%d/health", GetLocalIP().String(), port),
+			HTTP:     fmt.Sprintf("http://%s:%d/health", url, port),
 			Interval: "10s",
 			Timeout:  "5s",
 		},
@@ -56,12 +62,13 @@ func (c *Client) Register(name, id string, port int, tags *Labels) error {
 			registration.Tags = append(registration.Tags, strings.ReplaceAll(tg, "{{port}}", fmt.Sprintf("%d", port)))
 		}
 	}
-	c.logger.Info("Service ip", "id adr", GetLocalIP().String())
+	c.logger.Info("Service ip", "id adr", url)
 	err := c.api.Agent().ServiceRegister(registration)
 	if err != nil {
 		return err
 	}
-	c.logger.Info("Service enregistré avec protection Keycloak", "service", name, "id", id)
+	slog.Info("Service enregistré avec protection Keycloak", "service", name, "id", id)
+	// slog.Info("Service ip", "id adr", fmt.Sprintf("http://%s:%d/health", url, port))
 	return nil
 }
 
@@ -100,6 +107,7 @@ func (c *Client) DiscoverRemotes(dm string) ([]RemoteModule, error) {
 	var remotes []RemoteModule
 	for sName, tags := range services {
 		isUI := false
+		// slog.Info("Service encours de traitement", "service", sName)
 		for _, t := range tags {
 			if t == "knb-ui=true" {
 				isUI = true

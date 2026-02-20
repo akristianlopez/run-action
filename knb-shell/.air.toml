@@ -1,0 +1,14 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Compilation avec flags de debug (-N -l)
+  cmd = "go build -gcflags='all=-N -l' -o ./tmp/main main.go"
+  # Air lance Delve, qui lui-même exécute le binaire
+  full_bin = "dlv --listen=:40000 --headless=true --api-version=2 --accept-multiclient --continue exec ./tmp/main"
+  include_ext = ["go", "tpl", "tmpl", "html"]
+  exclude_dir = ["assets", "tmp", "vendor", "ui"]
+  delay = 1000
+
+[log]
+  time = true

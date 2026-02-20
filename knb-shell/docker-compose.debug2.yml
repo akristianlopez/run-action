@@ -1,26 +1,29 @@
 version: '3.8'
 
 services:
-  knb-shell-debug:
+  app:
     cap_add:
       - SYS_PTRACE
     security_opt:
       - seccomp:unconfined
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile.dev2
     image: knb-shell:debug
     container_name: knb-shell-debug
     ports:
       - "8080:8080"   # Port de votre application Gin
       - "40000:40000" # Port pour la connexion VS Code -> Delve
-    working_dir: /app
-    volumes:
-      - .:/app
+    # working_dir: /app
+    # volumes:
+    #   - .:/app
     environment:
       - PORT=8080
-      - SERVICE_NAME=shell
+      - SERVICE_NAME=app
       - CONSUL_ADDR=http://consul-server:8500
+      - SERVICE_DOMAIN=wosa.local
+      - SERVICE_KIND=swarm
+      - CONFIG_PATH=knb/services/shell
       - GIN_MODE=debug
     networks:
       - public_net
@@ -28,4 +31,3 @@ services:
 networks:
   public_net:
     external: true
-    name: public_net
