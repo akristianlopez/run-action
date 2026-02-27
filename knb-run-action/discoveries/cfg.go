@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	secrets "github.com/akristianlopez/run-action/knb-run-action/secrets/vault"
+	"github.com/akristianlopez/run-action/knb-run-action/secrets"
 	"github.com/akristianlopez/run-action/knb-run-action/webapi"
 	"github.com/goccy/go-yaml"
 	"github.com/hashicorp/consul/api"
