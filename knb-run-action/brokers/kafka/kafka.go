@@ -1,4 +1,4 @@
-package registration
+package brokers
 
 import (
 	"context"

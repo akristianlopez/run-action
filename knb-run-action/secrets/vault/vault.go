@@ -1,4 +1,4 @@
-package registration
+package secrets
 
 import (
 	"errors"

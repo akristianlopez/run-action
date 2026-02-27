@@ -26,7 +26,9 @@ func main() {
 	defaultPort, _ := strconv.Atoi(portStr)
 
 	portPtr := flag.Int("port", defaultPort, "Port d'écoute du serveur")
-	consulAddrPtr := flag.String("consul", getEnv("CONSUL_ADDR", "localhost:8500"), "Adresse de l'agent Consul")
+	// consulAddrPtr := flag.String("consul", getEnv("CONSUL_ADDR", "localhost:8500"), "Adresse de l'agent Consul")
+	consulAddrPtr := os.Getenv("CONSUL_ADDR")
+
 	kvPathPtr := flag.String("kvpath", getEnv("CONFIG_PATH", "knb/services/shell"), "Chemin de la config dans Consul KV")
 	serviceName := getEnv("SERVICE_NAME", "knb-shell")
 	serviceDomain := getEnv("SERVICE_DOMAIN", "wosa.local")
@@ -34,7 +36,7 @@ func main() {
 	flag.Parse()
 
 	// 3. Initialisation du client Consul
-	consulClient, err := consul.NewClient(*consulAddrPtr, logger)
+	consulClient, err := consul.NewClient(consulAddrPtr, logger)
 	if err != nil {
 		slog.Error("Impossible d'initialiser le client Consul", "erreur", err)
 		os.Exit(1)
@@ -70,15 +72,21 @@ func main() {
 	// Configuration du répertoire web (Vite génère dans web/dist)
 	workDir, _ := os.Getwd()
 	webDir := filepath.Join(workDir, "web", "dist")
-
+	// webDir := "/root/web/dist"
 	// Handler Santé
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"status": "UP", "service": serviceID})
 	})
 
+	http.HandleFunc("/health/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "UP", "service": serviceID})
+	})
+
 	// Handler Discovery
 	http.HandleFunc("/api/discovery", func(w http.ResponseWriter, r *http.Request) {
+		slog.Info("Requête reçue", "path", r.URL.Path)
 		remotes, err := consulClient.DiscoverRemotes(serviceDomain)
 		if err != nil {
 			http.Error(w, "Erreur de découverte", 500)
@@ -92,8 +100,10 @@ func main() {
 	fs := http.FileServer(http.Dir(webDir))
 	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Logique spécifique pour remoteEntry.js
+		slog.Info("Requête reçue", "path", r.URL.Path)
 		if strings.HasSuffix(r.URL.Path, "remoteEntry.js") {
-			filePath := filepath.Join(webDir, "remoteEntry.js")
+			// filePath := filepath.Join(webDir, "remoteEntry.js")
+			filePath := filepath.Join(webDir, "assets", "remoteEntry.js")
 			content, err := os.ReadFile(filePath)
 			if err != nil {
 				slog.Warn("Fichier remoteEntry.js manquant sur le disque", "path", filePath)
@@ -120,7 +130,7 @@ func main() {
 	}))
 
 	slog.Info("Démarrage du Shell KNB", "port", *portPtr, "dir", webDir)
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", *portPtr), nil); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", *portPtr), nil); err != nil {
 		slog.Error("Erreur fatale", "erreur", err)
 		os.Exit(1)
 	}

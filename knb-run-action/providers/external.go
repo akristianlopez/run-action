@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akristianlopez/run-action/knb-run-action/registration"
+	"github.com/akristianlopez/run-action/knb-run-action/brokers"
+	"github.com/akristianlopez/run-action/knb-run-action/discoveries"
+	"github.com/akristianlopez/run-action/knb-run-action/secrets"
 	"github.com/akristianlopez/run-action/knb-run-action/webapi"
 )
 
@@ -40,16 +42,16 @@ func (c *StandAloneProvider) registerService(cfg SwarmConsulConfig) error {
 func (c *StandAloneProvider) subscrib(url, topic, kind string) error {
 	switch strings.ToLower(kind) {
 	case "nats":
-		webapi.Emit = registration.NatsPublish
-		go registration.NatsSubscrib(url, topic)
+		webapi.Emit = brokers.NatsPublish
+		go brokers.NatsSubscrib(url, topic)
 		return nil
 	case "kafka":
-		webapi.Emit = registration.KafkaPublish
-		go registration.KafkaSubscrib(url, topic)
+		webapi.Emit = brokers.KafkaPublish
+		go brokers.KafkaSubscrib(url, topic)
 		return nil
 	case "rabbit":
-		webapi.Emit = registration.RabbitMQPublish
-		registration.RabbitMQSubscrib(url, topic)
+		webapi.Emit = brokers.RabbitMQPublish
+		brokers.RabbitMQSubscrib(url, topic)
 		return nil
 	}
 	return fmt.Errorf("Invalid kind value : %s", kind)
@@ -61,7 +63,7 @@ func (c *StandAloneProvider) ReadConfig() error {
 
 	name := os.Getenv("SERVICE_NAME")
 	if name == "" {
-		registration.ReadDefaultConfig(webapi.ConfigClient.Params["configuration_service_address"].(string),
+		discoveries.ReadDefaultConfig(webapi.ConfigClient.Params["configuration_service_address"].(string),
 			webapi.ConfigClient.Params["configuration_default_path"].(string), c.ip)
 	} else {
 		webapi.ConfigClient.Params["service_name"] = name
@@ -98,10 +100,10 @@ func (c *StandAloneProvider) ReadConfig() error {
 	os.Setenv("WEBAPI_SRV_PATH", webapi.ConfigClient.Params["configuration_path"].(string))
 	os.Setenv("WEBAPI_SRV_CONFIG_ADDRESS", webapi.ConfigClient.Params["configuration_service_address"].(string))
 	os.Setenv("WEBAPI_SRV_MODE", webapi.ConfigClient.Params["service_kind"].(string))
-	webapi.ExistingService = registration.ExistingService
-	webapi.IsServiceExists = registration.IsServiceExists
+	webapi.ExistingService = discoveries.ExistingService
+	webapi.IsServiceExists = discoveries.IsServiceExists
 
-	conf, err := registration.ReadConfig(webapi.ConfigClient.Params["configuration_service_address"].(string), webapi.ConfigClient.Params["configuration_path"].(string))
+	conf, err := discoveries.ReadConfig(webapi.ConfigClient.Params["configuration_service_address"].(string), webapi.ConfigClient.Params["configuration_path"].(string))
 	if err != nil {
 		slog.Error("Error while trying to read configuration", "error", err.Error())
 		os.Exit(1)
@@ -222,13 +224,13 @@ func (c *StandAloneProvider) Launch() {
 		}
 		webapi.Running_mode = webapi.ConfigClient.Params["service_kind"].(string)
 
-		db_par, err := registration.Read(fmt.Sprintf("http://%s", c.conf.Vault.URL), c.conf.Vault.Token, c.conf.Vault.Path /*"login", "password"*/) //"cubbyhole/webservice/db_access"
+		db_par, err := secrets.Read(fmt.Sprintf("http://%s", c.conf.Vault.URL), c.conf.Vault.Token, c.conf.Vault.Path /*"login", "password"*/) //"cubbyhole/webservice/db_access"
 		if err != nil {
 			slog.Error("Problem related to the database connection", "error", err.Error())
 			os.Exit(1)
 		}
 		webapi.Db_connect_params.Password = db_par
-		go registration.WatchConfig(
+		go discoveries.WatchConfig(
 			webapi.ConfigClient.Params["configuration_service_address"].(string),
 			webapi.ConfigClient.Params["configuration_path"].(string))
 	}
@@ -236,7 +238,7 @@ func (c *StandAloneProvider) Launch() {
 	// Enregistrement du microservice dans consul
 	//os.Hostname()
 	if IsVaultServiceDefined && IsDiscoveryServiceDefined {
-		n, e := registration.Register(webapi.ConfigClient.Params["service_port"].(uint64),
+		n, e := discoveries.Register(webapi.ConfigClient.Params["service_port"].(uint64),
 			webapi.ConfigClient.Params["service_name"].(string),
 
 			webapi.ConfigClient.Params["discovery_service_address"].(string), c.ip,

@@ -9,7 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/akristianlopez/run-action/knb-run-action/registration"
+	"github.com/akristianlopez/run-action/knb-run-action/brokers"
+	"github.com/akristianlopez/run-action/knb-run-action/discoveries"
 	"github.com/akristianlopez/run-action/knb-run-action/webapi"
 	"github.com/goccy/go-yaml"
 )
@@ -71,7 +72,7 @@ func (c *SwarmProvider) registerService(scf SwarmConsulConfig) error {
 	}
 	c.SysConf = conf
 
-	err = registration.RegisterEx(scf.Port, scf.ServiceName, scf.ConsulAddr, host_name)
+	err = discoveries.RegisterEx(scf.Port, scf.ServiceName, scf.ConsulAddr, host_name)
 	if err == nil {
 		p := 0
 		fmt.Sscanf(scf.Port, "%d", &p)
@@ -85,16 +86,16 @@ func (c *SwarmProvider) registerService(scf SwarmConsulConfig) error {
 func (c *SwarmProvider) subscrib(url, topic, kind string) error {
 	switch strings.ToLower(kind) {
 	case "nats":
-		webapi.Emit = registration.NatsPublish
-		go registration.NatsSubscrib(url, topic)
+		webapi.Emit = brokers.NatsPublish
+		go brokers.NatsSubscrib(url, topic)
 		return nil
 	case "kafka":
-		webapi.Emit = registration.KafkaPublish
-		go registration.KafkaSubscrib(url, topic)
+		webapi.Emit = brokers.KafkaPublish
+		go brokers.KafkaSubscrib(url, topic)
 		return nil
 	case "rabbit":
-		webapi.Emit = registration.RabbitMQPublish
-		go registration.RabbitMQSubscrib(url, topic)
+		webapi.Emit = brokers.RabbitMQPublish
+		go brokers.RabbitMQSubscrib(url, topic)
 		return nil
 	}
 	return fmt.Errorf("Invalid kind value : %s", kind)
@@ -138,7 +139,7 @@ func (c *SwarmProvider) Launch() {
 	hn, _ := os.Hostname()
 
 	// Desenregister the microservice from consul
-	err = registration.Deregister(hn, webapi.ConfigClient.Params["discovery_service_address"].(string))
+	err = discoveries.Deregister(hn, webapi.ConfigClient.Params["discovery_service_address"].(string))
 	if err != nil {
 		slog.Info(err.Error())
 	}

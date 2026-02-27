@@ -44,12 +44,19 @@ func (c *Client) Register(name, id string, port int, tags *Labels) error {
 	url := GetLocalIP().String()
 	if strings.EqualFold(serviceKind, "swarm") {
 		url = name
+		// overlayIP, err := GetOverlayIP()
+		// url = overlayIP
+		// if err != nil {
+		// 	slog.Error("Détection IP auto échouée, tentative via SERVICE_IP", "erreur", err)
+		// 	// overlayIP = getEnv("SERVICE_IP", "127.0.0.1")
+		// 	url = name
+		// }
 	}
 	registration := &api.AgentServiceRegistration{
 		ID:      id,
 		Name:    name,
 		Port:    port,
-		Address: GetLocalIP().String(),
+		Address: url,
 		Check: &api.AgentServiceCheck{
 			HTTP:     fmt.Sprintf("http://%s:%d/health", url, port),
 			Interval: "10s",
@@ -68,6 +75,7 @@ func (c *Client) Register(name, id string, port int, tags *Labels) error {
 		return err
 	}
 	slog.Info("Service enregistré avec protection Keycloak", "service", name, "id", id)
+	slog.Info("Service ip", "id adr", GetLocalIP().String())
 	// slog.Info("Service ip", "id adr", fmt.Sprintf("http://%s:%d/health", url, port))
 	return nil
 }
@@ -133,4 +141,33 @@ func GetLocalIP() net.IP {
 	defer conn.Close()
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 	return localAddr.IP
+}
+func GetOverlayIP() (string, error) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+
+	for _, iface := range interfaces {
+		// Critères de sélection de l'interface Overlay :
+		// 1. MTU de 1450 (spécifique au VXLAN de Docker Swarm)
+		// 2. Nom de l'interface (souvent eth0 pour le premier réseau défini)
+		// 3. L'interface doit être "UP" (activée)
+		if (iface.MTU == 1450 || iface.Name == "eth0") && (iface.Flags&net.FlagUp) != 0 {
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+
+			for _, addr := range addrs {
+				if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+					// On ne garde que l'IPv4
+					if ipnet.IP.To4() != nil {
+						return ipnet.IP.String(), nil
+					}
+				}
+			}
+		}
+	}
+	return "", fmt.Errorf("impossible de trouver l'interface réseau Overlay")
 }

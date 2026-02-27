@@ -20,14 +20,18 @@ services:
     environment:
       - PORT=8080
       - SERVICE_NAME=app
-      - CONSUL_ADDR=http://consul-server:8500
+      - CONSUL_ADDR=wosa_service_mesh_consul:8500
+      # http://consul:8500
       - SERVICE_DOMAIN=wosa.local
       - SERVICE_KIND=swarm
       - CONFIG_PATH=knb/services/shell
-      - GIN_MODE=debug
+      # - GIN_MODE=debug
     networks:
       - public_net
 
 networks:
   public_net:
+    driver: overlay
     external: true
+    attachable: true
+    name: public_net
