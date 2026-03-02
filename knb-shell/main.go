@@ -99,8 +99,40 @@ func main() {
 	// Handler Statique avec INJECTION DYNAMIQUE
 	fs := http.FileServer(http.Dir(webDir))
 	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Logique spécifique pour remoteEntry.js
 		slog.Info("Requête reçue", "path", r.URL.Path)
+
+		// CAS 1 : Injection du Token dans l'index.html
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			filePath := filepath.Join(webDir, "index.html")
+			content, err := os.ReadFile(filePath)
+			if err != nil {
+				http.Error(w, "index.html non trouvé", http.StatusNotFound)
+				return
+			}
+
+			// Récupération du token depuis les headers (injectés par Forward-Auth/Traefik)
+			// Adaptez le nom du header selon votre config (ex: Authorization ou X-Auth-Token)
+			token := r.Header.Get("X-Auth-Token")
+			// slog.Info("Token récupéré pour injection", "header", r.Header)
+			if token == "" {
+				// Fallback sur le header Authorization si besoin
+				authHeader := r.Header.Get("Authorization")
+				token = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+			if token == "" {
+				token = r.Header.Get("X-Forwarded-Access-Token") // Courant avec Authentik/Traefik
+			}
+			// slog.Info("Token récupéré pour injection", "token_present", token != "")
+			// Injection d'un script global pour que le main.js puisse lire le token sans fetch
+			scriptInjection := fmt.Sprintf("<script>window.__KNB_TOKEN__ = '%s';</script>", token)
+			modified := strings.Replace(string(content), "</head>", scriptInjection+"</head>", 1)
+
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(modified))
+			return
+		}
+
+		// CAS 2 : Gestion dynamique de remoteEntry.js
 		if strings.HasSuffix(r.URL.Path, "remoteEntry.js") {
 			// filePath := filepath.Join(webDir, "remoteEntry.js")
 			filePath := filepath.Join(webDir, "assets", "remoteEntry.js")

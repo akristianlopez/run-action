@@ -8,7 +8,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/akristianlopez/run-action/knb-run-action/secrets"
 	"github.com/akristianlopez/run-action/knb-run-action/webapi"
 	"github.com/goccy/go-yaml"
 	"github.com/hashicorp/consul/api"
@@ -44,12 +43,12 @@ func WatchConfig(addr, key string) (*webapi.Config, error) {
 				slog.Warn("YAML invalide", "error", err)
 				return
 			}
-			db_par, err := secrets.Read(fmt.Sprintf("http://%s", conf.Vault.URL), conf.Vault.Token, conf.Vault.Path /*"login", "password"*/) //"cubbyhole/webservice/db_access"
-			if err != nil {
-				slog.Error("Problem related to the database connection", "error", err.Error())
-				os.Exit(1)
-			}
-
+			// db_par, err := secrets.Read(fmt.Sprintf("http://%s", conf.Vault.URL), conf.Vault.Token, conf.Vault.Path /*"login", "password"*/) //"cubbyhole/webservice/db_access"
+			// if err != nil {
+			// 	slog.Error("Problem related to the database connection", "error", err.Error())
+			// 	os.Exit(1)
+			// }
+			db_par := "lopez"
 			if webapi.Db_connect_params == nil {
 				webapi.Db_connect_params = &webapi.Db_access_params{}
 			}

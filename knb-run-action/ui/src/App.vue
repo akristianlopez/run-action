@@ -47,10 +47,10 @@
 </template>
 
 <script>
-export default {
-  name: 'OrganizationDashboard',
-  setup() {
-    return {};
+  export default {
+    name: 'OrganizationDashboard',
+    setup() {
+      return {};
+    }
   }
-}
 </script>

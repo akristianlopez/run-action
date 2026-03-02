@@ -9,7 +9,6 @@ import (
 
 	"github.com/akristianlopez/run-action/knb-run-action/brokers"
 	"github.com/akristianlopez/run-action/knb-run-action/discoveries"
-	"github.com/akristianlopez/run-action/knb-run-action/secrets"
 	"github.com/akristianlopez/run-action/knb-run-action/webapi"
 )
 
@@ -179,6 +178,8 @@ func (c *StandAloneProvider) Launch() {
 		IsVaultServiceDefined = false
 	}
 
+	IsVaultServiceDefined = false
+
 	// Connexion Consul
 	// if !validateIP(webapi.ConfigClient.Params["discovery_service_address"].(string)) &&
 	// 	!validateHostname(webapi.ConfigClient.Params["discovery_service_address"].(string)) {
@@ -224,11 +225,12 @@ func (c *StandAloneProvider) Launch() {
 		}
 		webapi.Running_mode = webapi.ConfigClient.Params["service_kind"].(string)
 
-		db_par, err := secrets.Read(fmt.Sprintf("http://%s", c.conf.Vault.URL), c.conf.Vault.Token, c.conf.Vault.Path /*"login", "password"*/) //"cubbyhole/webservice/db_access"
-		if err != nil {
-			slog.Error("Problem related to the database connection", "error", err.Error())
-			os.Exit(1)
-		}
+		// db_par, err := secrets.Read(fmt.Sprintf("http://%s", c.conf.Vault.URL), c.conf.Vault.Token, c.conf.Vault.Path /*"login", "password"*/) //"cubbyhole/webservice/db_access"
+		// if err != nil {
+		// 	slog.Error("Problem related to the database connection", "error", err.Error())
+		// 	os.Exit(1)
+		// }
+		db_par := "lopez"
 		webapi.Db_connect_params.Password = db_par
 		go discoveries.WatchConfig(
 			webapi.ConfigClient.Params["configuration_service_address"].(string),
@@ -237,7 +239,8 @@ func (c *StandAloneProvider) Launch() {
 
 	// Enregistrement du microservice dans consul
 	//os.Hostname()
-	if IsVaultServiceDefined && IsDiscoveryServiceDefined {
+
+	if /*IsVaultServiceDefined &&*/ IsDiscoveryServiceDefined {
 		n, e := discoveries.Register(webapi.ConfigClient.Params["service_port"].(uint64),
 			webapi.ConfigClient.Params["service_name"].(string),
 

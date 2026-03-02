@@ -125,9 +125,14 @@ func (c *Client) DiscoverRemotes(dm string) ([]RemoteModule, error) {
 
 		if isUI {
 			cleanName := strings.TrimPrefix(sName, "knb-")
+			slog.Info("Service UI découvert", "service", sName, "url", fmt.Sprintf("https://%s.%s/assets", cleanName, dm)) ///remoteEntry.js
+			// remotes = append(remotes, RemoteModule{
+			// 	Name: sName,
+			// 	URL:  fmt.Sprintf("https://%s.%s/ui", cleanName, dm), ///remoteEntry.js
+			// })
 			remotes = append(remotes, RemoteModule{
 				Name: sName,
-				URL:  fmt.Sprintf("https://%s.%s/ui/remoteEntry.js", cleanName, dm),
+				URL:  fmt.Sprintf("/%s/ui", cleanName), ///remoteEntry.js
 			})
 		}
 	}

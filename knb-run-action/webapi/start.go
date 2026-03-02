@@ -3,6 +3,7 @@ package webapi
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"log"
 	"net/http"
@@ -40,42 +41,70 @@ func Start(serviceName string, port int) error {
 		c.Next()
 	})
 
-	// 2. Route pour le fichier remoteEntry.js dynamique
-	// Remplace 'KNB_DYNAMIC_SERVICE_NAME' par la valeur de serviceName au runtime
-	router.GET("/ui/remoteEntry.js", func(c *gin.Context) {
-		var err error
-		once.Do(func() {
-			filePath := "./ui/dist/assets/remoteEntry.js"
-			content, readErr := os.ReadFile(filePath)
-			if readErr != nil {
-				err = readErr
+	// Définition de la route avec un wildcard pour capturer tous les assets
+	router.GET(fmt.Sprintf("/%s/ui/*filepath", serviceName), func(c *gin.Context) {
+		path := c.Param("filepath")
+		fullPath := filepath.Join("./ui/dist/assets", path)
+
+		// Cas spécifique : Traitement et mise en cache du remoteEntry.js
+		if strings.HasSuffix(path, "remoteEntry.js") {
+			var err error
+			once.Do(func() {
+				// On cherche le fichier dans ./ui/dist/ ou ./ui/dist/assets/ selon votre build
+				content, readErr := os.ReadFile(fullPath)
+				if readErr != nil {
+					// Tentative de secours dans /assets/ si le chemin direct échoue
+					content, readErr = os.ReadFile(filepath.Join("./ui/dist/", "remoteEntry.js"))
+				}
+
+				if readErr != nil {
+					err = readErr
+					return
+				}
+
+				// Injection dynamique du nom du service
+				modified := strings.ReplaceAll(string(content), "KNB_DYNAMIC_SERVICE_NAME", serviceName)
+				cachedRemoteJS = []byte(modified)
+				log.Printf("✅ Module Federation [%s] injecté et mis en cache", serviceName)
+			})
+
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "remoteEntry.js introuvable"})
 				return
 			}
 
-			// Injection du nom réel du service dans le code JavaScript
-			modified := strings.ReplaceAll(string(content), "KNB_DYNAMIC_SERVICE_NAME", serviceName)
-			cachedRemoteJS = []byte(modified)
-			log.Printf("✅ Module [%s] injecté et mis en cache", serviceName)
-		})
-
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Fichier remoteEntry.js introuvable. Vérifiez le build frontend (npm run build)."})
+			serveJS(c, cachedRemoteJS)
 			return
 		}
 
-		c.Header("Content-Type", "application/javascript")
-		c.Header("Cache-Control", "no-cache") // Utile pour le développement
-		c.Data(http.StatusOK, "application/javascript", cachedRemoteJS)
-	})
+		// Cas général : Servir les autres fichiers JS (ex: __federation_expose_App.js)
+		if strings.HasSuffix(path, ".js") {
+			content, err := os.ReadFile(fullPath)
+			if err != nil {
+				c.Status(http.StatusNotFound)
+				return
+			}
+			serveJS(c, content)
+			return
+		}
 
-	// 3. Service des assets statiques (CSS, chunks JS générés par Vite)
-	router.Static("/ui/assets", "./ui/dist/assets")
+		// Par défaut, laisser Gin servir le fichier statique normalement
+		fullPath = filepath.Join("./ui/dist", path)
+		c.File(fullPath)
+	})
 
 	// 4. Intégration de vos routes métier existantes
 	addRoutes(router, *store)
 
 	log.Printf("🚀 Serveur [%s] en écoute sur le port %d", serviceName, port)
-	return router.Run(fmt.Sprintf(":%d", port))
+	return router.Run(fmt.Sprintf("0.0.0.0:%d", port))
+}
+
+func serveJS(c *gin.Context, content []byte) {
+	c.Header("Content-Type", "application/javascript")
+	c.Header("Access-Control-Allow-Origin", "*") // Indispensable pour la Fédération
+	c.Header("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "application/javascript", content)
 }
 
 // func Start(port int) error {

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -48,6 +49,35 @@ func (c *SwarmProvider) loadBootstrapConfig() SwarmConsulConfig {
 		ServiceName: os.Getenv("SERVICE_NAME"),
 		ConsulAddr:  os.Getenv("CONSUL_HTTP_ADDR"),
 	}
+}
+func LoadSwarmSecrets() (map[string]string, error) {
+	secrets := make(map[string]string)
+	secretDir := "/run/secrets"
+
+	// Lire le répertoire
+	files, err := os.ReadDir(secretDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return secrets, nil // Retourne map vide si aucun secret n'est monté
+		}
+		return nil, err
+	}
+
+	for _, file := range files {
+		// On ignore les dossiers (seuls les fichiers sont des secrets)
+		if !file.IsDir() {
+			path := filepath.Join(secretDir, file.Name())
+			content, err := os.ReadFile(path)
+			if err != nil {
+				fmt.Printf("Erreur lors de la lecture du secret %s: %v\n", file.Name(), err)
+				continue
+			}
+			// On nettoie les espaces et retours à la ligne (crucial pour les mots de passe)
+			secrets[file.Name()] = strings.TrimSpace(string(content))
+		}
+	}
+
+	return secrets, nil
 }
 
 // readSecret lit un fichier dans /run/secrets/
