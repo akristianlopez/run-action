@@ -14,6 +14,7 @@
 </head>
 <body>
     <div id="app">
+        <!--
         <header class="bg-indigo-700 text-white p-4 shadow-lg flex justify-between items-center">
             <div class="flex items-center gap-2">
                 <div class="w-8 h-8 bg-white rounded-full flex items-center justify-center text-indigo-700 font-bold">K</div>
@@ -21,7 +22,7 @@
             </div>
             <nav id="menu" class="flex gap-2"></nav>
         </header>
-
+        
         <main id="container" class="max-w-7xl mx-auto p-6">
             <div id="welcome" class="bg-white p-12 rounded-2xl shadow-sm border border-gray-200 text-center">
                 <h2 class="text-3xl font-bold text-gray-800 mb-4">Console d'Orchestration</h2>
@@ -31,6 +32,56 @@
             </div>
             <div id="mfe-viewport" class="mt-4"></div>
         </main>
+        -->
+
+<div id="loading-screen" class="fixed inset-0 z-[110] flex flex-col items-center justify-center bg-white transition-opacity duration-700 ease-in-out">
+    
+    <div class="absolute w-64 h-64 bg-indigo-50 rounded-full blur-3xl opacity-50 animate-pulse"></div>
+
+    <div class="relative mb-12 transform transition-all duration-1000 animate-in fade-in zoom-in fill-mode-both">
+        <div class="w-48 h-48 flex items-center justify-center animate-bounce bg-white rounded-full overflow-hidden shadow-[0_0_50px_rgba(79,70,229,0.1)] border border-indigo-50/50">
+            <img 
+                src="logo-knb.svg" 
+                alt="Knowledge Bits" 
+                class="w-full h-full object-contain brightness-110 contrast-105 transition-transform duration-500 hover:scale-110" 
+            />
+        </div>
+        
+        <div class="absolute -inset-5 border-[2px] border-slate-100 border-t-indigo-400 rounded-full animate-spin"></div>
+    </div>
+
+    <div class="text-center relative z-10">
+        <h1 class="text-2xl font-black tracking-tight text-slate-800 mb-2 drop-shadow-sm">
+            Knowledge Bits
+        </h1>
+        <div class="flex items-center justify-center gap-2 text-slate-400 font-semibold text-xs uppercase tracking-widest">
+            <span id="loading-status">Système en cours d'éveil</span>
+            <span class="flex gap-1.5">
+                <span class="w-1.5 h-1.5 bg-indigo-300 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                <span class="w-1.5 h-1.5 bg-indigo-300 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                <span class="w-1.5 h-1.5 bg-indigo-300 rounded-full animate-bounce"></span>
+            </span>
+        </div>
+    </div>
+
+    <div class="absolute bottom-16 w-32 h-1 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
+        <div class="h-full bg-gradient-to-r from-indigo-300 to-indigo-500 animate-[loading_1.5s_infinite_linear]"></div>
+    </div>
+</div>
+
+<style>
+    @keyframes loading {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+    }
+    
+    .animate-in {
+        animation-duration: 0.8s;
+        animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+</style>
+
+
     </div>
 
     <!-- Vérifie bien que ce fichier existe dans web/src/main.js -->
