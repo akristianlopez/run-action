@@ -14,8 +14,9 @@ import (
 
 // RemoteModule represents a discovered micro-frontend
 type RemoteModule struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	MFEConfig string `json:"mfeConfig"`
 }
 
 // Client encapsulates interactions with Consul

@@ -73,7 +73,7 @@ func Start(serviceName string, port int) error {
 				return
 			}
 
-			serveJS(c, cachedRemoteJS)
+			serveJS(c, cachedRemoteJS, ".js")
 			return
 		}
 
@@ -84,7 +84,17 @@ func Start(serviceName string, port int) error {
 				c.Status(http.StatusNotFound)
 				return
 			}
-			serveJS(c, content)
+			serveJS(c, content, ".js")
+			return
+		}
+		if strings.HasSuffix(path, ".css") {
+			content, err := os.ReadFile(fullPath)
+			if err != nil {
+				c.Status(http.StatusNotFound)
+				return
+			}
+
+			serveJS(c, content, ".css")
 			return
 		}
 
@@ -100,11 +110,18 @@ func Start(serviceName string, port int) error {
 	return router.Run(fmt.Sprintf("0.0.0.0:%d", port))
 }
 
-func serveJS(c *gin.Context, content []byte) {
+func serveJS(c *gin.Context, content []byte, ext string) {
 	c.Header("Content-Type", "application/javascript")
 	c.Header("Access-Control-Allow-Origin", "*") // Indispensable pour la Fédération
 	c.Header("Cache-Control", "no-cache")
-	c.Data(http.StatusOK, "application/javascript", content)
+
+	switch ext {
+	case ".js":
+		c.Header("Content-Type", "application/javascript")
+	case ".css":
+		c.Header("Content-Type", "text/css")
+	}
+	c.Data(http.StatusOK, c.GetHeader("Content-Type"), content)
 }
 
 // func Start(port int) error {

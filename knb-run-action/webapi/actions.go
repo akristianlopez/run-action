@@ -245,11 +245,12 @@ func (sec *security) removeDuplicates(input []string) []string {
 	return result
 }
 
-func (sec *security) load() (bool, error) {
+func (sec *security) load() (bool, map[string]MFEConfig, error) {
 	// loading of the context
+	menu := make(map[string]MFEConfig)
 	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
 	if err != nil {
-		return false, fmt.Errorf("Nsina: Error when trying to retrieve the action from the database : %v", err)
+		return false, menu, fmt.Errorf("Nsina: Error when trying to retrieve the action from the database : %v", err)
 	}
 	defer db.Close()
 	sec.isInitMode = false
@@ -258,24 +259,37 @@ func (sec *security) load() (bool, error) {
 	// check wether the sysobject exist in the database, otherwise reinitialize the database
 	// two databases are allowed : postgresql and mariadb
 	sql := ""
+	sqlMenu := ""
 	switch strings.ToLower(Db_connect_params.Kind) {
 	case "postgres":
-		sql = fmt.Sprintf("select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','LABEL','CONTRACT','EVENT') and table_catalog ='%s'", Db_connect_params.Name)
+		sql = fmt.Sprintf("select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','LABEL','CONTRACT','EVENT','ROLES','ORGANIZATION','SERV_DESC') and table_catalog ='%s'", Db_connect_params.Name)
+		sqlMenu = `select o.id,o.idpere,l.label,COALESCE(o.proc,'') as process,COALESCE(p.label,'') as p_label, COALESCE(r.goal,'') as knowledge, COALESCE(r.role,'') as role,o.noorder 
+				from organization o inner join label l on (l.proc=o.proc and l.id=o.labelid)
+					inner join (select p.code,ll.label from process p inner join label ll on (p.id=ll.id and p.code=ll.proc and ll.lan='%s')) P on(o.proc=p.code)
+					left  join roles r on (o.proc=r.proc and o.id=r.id )
+				where l.lan='%s' 
+				order by idpere,noorder `
 	case "mariadb":
-		sql = fmt.Sprintf("select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','LABEL','CONTRACT','EVENT') and table_catalog ='%s'", Db_connect_params.Name)
+		sql = fmt.Sprintf("select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','LABEL','CONTRACT','EVENT','ROLES','ORGANIZATION','SERV_DESC')  and table_catalog ='%s'", Db_connect_params.Name)
+		sqlMenu = `select o.id,o.idpere,l.label,COALESCE(o.proc,'') as process,COALESCE(p.label,'') as p_label, COALESCE(r.goal,'') as knowledge, COALESCE(r.role,'') as role,o.noorder 
+				from organization o inner join label l on (l.proc=o.proc and l.id=o.labelid)
+					inner join (select p.code,ll.label from process p inner join label ll on (p.id=ll.id and p.code=ll.proc and ll.lan='%s')) P on(o.proc=p.code)
+					left  join roles r on (o.proc=r.proc and o.id=r.id )
+				where l.lan='%s' 
+				order by idpere,noorder `
 	default:
 		slog.Error("Invalid database kind", "kind", Db_connect_params.Kind)
 		os.Exit(1)
 	}
 	rows, err := db.Query(sql)
 	if err != nil {
-		return false, err
+		return false, menu, err
 	}
 	cpt := 0
 	for rows.Next() {
 		cpt++
 	}
-	if cpt < 1 || cpt != 13 {
+	if cpt < 1 || cpt != 16 {
 		sec.isInitMode = true
 		sql = genScriptInit()
 		val, err := act.Interpret(sql, sec.IsHandlabled, sec.hasFilter, sec.getFilter, nil, false, false,
@@ -283,23 +297,23 @@ func (sec *security) load() (bool, error) {
 		if len(err) > 0 {
 			v, _ := json.Marshal(err)
 			slog.Error("Initialization of the system security", "source", sql, "error", string(v))
-			return false, fmt.Errorf("Too many error occured")
+			return false, menu, fmt.Errorf("Too many error occured")
 		}
 		if val.Type() == object.ERROR_OBJ {
 			slog.Error("Initialization of the system security", "source", sql, "error", val.Inspect())
-			return false, fmt.Errorf("Initialization of the system security : %s", val.Inspect())
+			return false, menu, fmt.Errorf("Initialization of the system security : %s", val.Inspect())
 		}
-		return true, nil
+		return true, menu, nil
 	}
-	rows, err = db.Query("SELECT P.ROLE,C.PROC,C.GOAL,C.OBJECT,C.TRANS FROM CONTEXT C INNER JOIN PROCESS P ON (P.CODE= C.PROC)")
+	rows, err = db.Query("SELECT R.ROLE,C.PROC,C.GOAL,C.OBJECT,C.TRANS FROM CONTEXT C INNER JOIN ROLES R ON(R.PROC=C.PROC AND R.GOAL=C.GOAL)")
 	if err != nil {
-		return false, err
+		return false, menu, err
 	}
 	var role, proc, goal, object, trans string
 	for rows.Next() {
 		err = rows.Scan(&role, &proc, &goal, &object, &trans)
 		if err != nil {
-			return false, err
+			return false, menu, err
 		}
 		if _, ok := sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))]; !ok {
 			sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))] = make(map[string][]string)
@@ -321,15 +335,15 @@ func (sec *security) load() (bool, error) {
 	}
 
 	// load filter
-	rows, err = db.Query("SELECT P.ROLE, F.PROC, F.GOAL, F.OBJECT, F.EXPRESSSION FROM FILTER F INNER JOIN PROCESS P ON (P.CODE= F.PROC)")
+	rows, err = db.Query("SELECT R.ROLE, F.PROC, F.GOAL, F.OBJECT, F.EXPRESSSION FROM FILTER F INNER JOIN ROLES R ON (R.PROC= F.PROC AND R.GOAL=F.GOAL)")
 	if err != nil {
-		return false, err
+		return false, menu, err
 	}
 	sec.filter = make(map[string]ast.Expression)
 	for rows.Next() {
 		err = rows.Scan(&role, &proc, &goal, &object, &trans)
 		if err != nil {
-			return false, err
+			return false, menu, err
 		}
 		expr, erList := act.Expression(trans, object, "", sec.IsHandlabled)
 		if len(erList) > 0 {
@@ -345,9 +359,9 @@ func (sec *security) load() (bool, error) {
 	}
 
 	// loading of excluded fields
-	rows, err = db.Query("SELECT P.ROLE, E.PROC, E.GOAL, E.OBJECT, E.FIELD FROM EXCLUDED E INNER JOIN PROCESS P ON (P.CODE= E.PROC)")
+	rows, err = db.Query("SELECT R.ROLE, E.PROC, E.GOAL, E.OBJECT, E.FIELD FROM EXCLUDED E INNER JOIN ROLES R ON (R.PROC= E.PROC AND R.GOAL=E.GOAL)")
 	if err != nil {
-		return false, err
+		return false, menu, err
 	}
 	sec.excluded = make(map[string]bool)
 	for rows.Next() {
@@ -362,7 +376,103 @@ func (sec *security) load() (bool, error) {
 			continue
 		}
 	}
-	return true, nil
+
+	//loading menu ...
+	rows, err = db.Query("select code from lan")
+	code := ""
+	for rows.Next() {
+		err = rows.Scan(&code)
+		if err != nil {
+			return false, menu, err
+		}
+		row, er := db.Query(fmt.Sprintf("select name,l.label,Icon from serv_desc s left join label l on (s.id=l.id and l.proc='initialization') where l.lan='%s'", code))
+		if er != nil {
+			return false, menu, er
+		}
+		row.Next()
+		var srvName, srvLabel, srvIcon string
+		row.Scan(&srvName, &srvLabel, &srvIcon)
+		row, er = db.Query(fmt.Sprintf(sqlMenu, code, code))
+		if er != nil {
+			return false, menu, er
+		}
+		var id, idpere int64
+		var label, process, p_label, knowledge, role string
+		var noorder int
+		nav := make([]menuItem, 0)
+		for row.Next() {
+			row.Scan(&id, &idpere, &label, &process, &p_label, &knowledge, &role, &noorder)
+			buildItem(&nav, id, idpere, label, process, p_label, knowledge, role, noorder)
+		}
+
+		menu[strings.ToLower(code)] = MFEConfig{Name: srvName, Label: srvLabel, Icon: srvIcon, Menu: toMenuItem(nav)}
+	}
+	return true, menu, nil
+}
+func toMenuItem(items []menuItem) []MenuItem {
+	res := make([]MenuItem, len(items))
+	for i, item := range items {
+		res[i] = MenuItem{
+			Id:       item.Id,
+			Label:    item.Label,
+			Proc:     item.Proc,
+			Text:     item.Text,
+			Role:     item.Role,
+			Order:    item.Order,
+			Knb:      item.Knb,
+			Icon:     item.Icon,
+			Children: toMenuItem(*item.Children),
+		}
+	}
+	return res
+}
+func findItems(items *[]menuItem, id int64) (bool, *menuItem) {
+	if len(*items) == 0 {
+		return false, &menuItem{Id: 0}
+	}
+	for _, item := range *items {
+		if item.Id == id {
+			return true, &item
+		}
+		if ok, it := findItems(item.Children, id); ok {
+			return ok, it
+		}
+	}
+	return false, &menuItem{Id: 0}
+}
+func buildItem(nav *[]menuItem, id, idpere int64,
+	label, process, p_label, knowledge, role string, noorder int) {
+	ok, item := findItems(nav, idpere)
+	if !ok && id == idpere {
+		m := menuItem{
+			Id:       id,
+			Label:    label,
+			Proc:     process,
+			Text:     p_label,
+			Role:     role,
+			Order:    noorder,
+			Knb:      knowledge,
+			Children: &[]menuItem{},
+		}
+		*nav = append(*nav, m)
+		return
+	}
+	if item.Id != 0 {
+		if o, _ := findItems(item.Children, id); !o {
+			m := menuItem{
+				Id:       id,
+				Label:    label,
+				Proc:     process,
+				Text:     p_label,
+				Role:     role,
+				Order:    noorder,
+				Knb:      knowledge,
+				Children: &[]menuItem{},
+			}
+			*item.Children = append(*item.Children, m)
+		}
+		return
+	}
 }
 
 type Signatures struct {
@@ -376,6 +486,23 @@ type Action struct {
 	action     map[string]map[string]map[string]*ast.Action
 	knb        map[string]bool
 	screen     map[string]map[string]map[string]string
+	Menu       *map[string]MFEConfig
+}
+
+func (action *Action) getMFEConfig() map[string]MFEConfig {
+	return *action.Menu
+}
+
+type menuItem struct {
+	Id       int64
+	Order    int
+	Icon     string
+	Label    string
+	Proc     string
+	Role     string
+	Text     string
+	Knb      string
+	Children *[]menuItem
 }
 
 func newAction() *Action {
@@ -386,11 +513,12 @@ func newAction() *Action {
 		action:     make(map[string]map[string]map[string]*ast.Action),
 		screen:     make(map[string]map[string]map[string]string),
 	}
-	_, err := s.secu.load()
+	_, menu, err := s.secu.load()
 	if err != nil {
 		slog.Error("Error at the initialization of the step", "error", err.Error())
 		os.Exit(1)
 	}
+	s.Menu = &menu
 	return s
 }
 func (a *Action) getSecretKey() (string, error) {
