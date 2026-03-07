@@ -263,7 +263,7 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 	switch strings.ToLower(Db_connect_params.Kind) {
 	case "postgres":
 		sql = fmt.Sprintf("select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','LABEL','CONTRACT','EVENT','ROLES','ORGANIZATION','SERV_DESC') and table_catalog ='%s'", Db_connect_params.Name)
-		sqlMenu = `select o.id,o.idpere,l.label,COALESCE(o.proc,'') as process,COALESCE(p.label,'') as p_label, COALESCE(r.goal,'') as knowledge, COALESCE(r.role,'') as role,o.noorder 
+		sqlMenu = `select o.id,o.idpere,l.label,COALESCE(o.proc,'') as process,COALESCE(p.label,'') as p_label, COALESCE(r.goal,'') as knowledge, COALESCE(r.role,'') as role, COALESCE(o.icon,'') as icon, o.noorder 
 				from organization o inner join label l on (l.proc=o.proc and l.id=o.labelid)
 					inner join (select p.code,ll.label from process p inner join label ll on (p.id=ll.id and p.code=ll.proc and ll.lan='%s')) P on(o.proc=p.code)
 					left  join roles r on (o.proc=r.proc and o.id=r.id )
@@ -271,7 +271,7 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 				order by idpere,noorder `
 	case "mariadb":
 		sql = fmt.Sprintf("select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','LABEL','CONTRACT','EVENT','ROLES','ORGANIZATION','SERV_DESC')  and table_catalog ='%s'", Db_connect_params.Name)
-		sqlMenu = `select o.id,o.idpere,l.label,COALESCE(o.proc,'') as process,COALESCE(p.label,'') as p_label, COALESCE(r.goal,'') as knowledge, COALESCE(r.role,'') as role,o.noorder 
+		sqlMenu = `select o.id,o.idpere,l.label,COALESCE(o.proc,'') as process,COALESCE(p.label,'') as p_label, COALESCE(r.goal,'') as knowledge, COALESCE(r.role,'') as role, COALESCE(o.icon,'') as icon, noorder 
 				from organization o inner join label l on (l.proc=o.proc and l.id=o.labelid)
 					inner join (select p.code,ll.label from process p inner join label ll on (p.id=ll.id and p.code=ll.proc and ll.lan='%s')) P on(o.proc=p.code)
 					left  join roles r on (o.proc=r.proc and o.id=r.id )
@@ -397,12 +397,13 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 			return false, menu, er
 		}
 		var id, idpere int64
-		var label, process, p_label, knowledge, role string
+		var label, process, p_label, knowledge, role, icon string
 		var noorder int
+
 		nav := make([]menuItem, 0)
 		for row.Next() {
-			row.Scan(&id, &idpere, &label, &process, &p_label, &knowledge, &role, &noorder)
-			buildItem(&nav, id, idpere, label, process, p_label, knowledge, role, noorder)
+			row.Scan(&id, &idpere, &label, &process, &p_label, &knowledge, &role, &icon, &noorder)
+			buildItem(&nav, id, idpere, label, process, p_label, knowledge, role, icon, noorder)
 		}
 
 		menu[strings.ToLower(code)] = MFEConfig{Name: srvName, Label: srvLabel, Icon: srvIcon, Menu: toMenuItem(nav)}
@@ -441,7 +442,7 @@ func findItems(items *[]menuItem, id int64) (bool, *menuItem) {
 	return false, &menuItem{Id: 0}
 }
 func buildItem(nav *[]menuItem, id, idpere int64,
-	label, process, p_label, knowledge, role string, noorder int) {
+	label, process, p_label, knowledge, role, icon string, noorder int) {
 	ok, item := findItems(nav, idpere)
 	if !ok && id == idpere {
 		m := menuItem{
@@ -452,6 +453,7 @@ func buildItem(nav *[]menuItem, id, idpere int64,
 			Role:     role,
 			Order:    noorder,
 			Knb:      knowledge,
+			Icon:     icon,
 			Children: &[]menuItem{},
 		}
 		*nav = append(*nav, m)
@@ -467,6 +469,7 @@ func buildItem(nav *[]menuItem, id, idpere int64,
 				Role:     role,
 				Order:    noorder,
 				Knb:      knowledge,
+				Icon:     icon,
 				Children: &[]menuItem{},
 			}
 			*item.Children = append(*item.Children, m)

@@ -30,3 +30,20 @@ transition-property: all;
 transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 transition-duration: 150ms;
 }
+/* Animation de sélection douce pour le Builder */
+.relative.group {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Effet de "pulse" léger sur l'élément sélectionné */
+.border-indigo-500.bg-indigo-50\/50 {
+    animation: selectPulse 2s infinite;
+    transform: scale(1.005);
+    box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.1);
+}
+
+@keyframes selectPulse {
+    0% { border-color: rgba(79, 70, 229, 1); }
+    50% { border-color: rgba(79, 70, 229, 0.4); }
+    100% { border-color: rgba(79, 70, 229, 1); }
+}
