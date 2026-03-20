@@ -1,0 +1,60 @@
+[
+  {
+    "id": "row_01",
+    "type": "grid",
+    "props": { "columns": 2, "gap": "1rem", "align": "center" },
+    "children": [
+      {
+        "id": "inp_mat_01",
+        "type": "text",
+        "props": {
+          "label": "Style Outline",
+          "variant": "outline",
+          "color": "#4f46e5",
+          "placeholder": "Ex: Atouba",
+          "required": true
+        }
+      },
+      {
+        "id": "inp_mat_02",
+        "type": "text",
+        "props": {
+          "label": "Style Standard",
+          "variant": "standard",
+          "placeholder": "Une simple ligne..."
+        }
+      }
+    ]
+  },
+  {
+    "id": "chart_01",
+    "type": "chart",
+    "props": {
+      "label": "Statistiques de connexion",
+      "chartType": "bar",
+      "color": "#10b981",
+      "dataSource": "/api/v1/stats"
+    }
+  },
+  {
+    "id": "table_01",
+    "type": "table",
+    "props": {
+      "label": "Liste des Utilisateurs",
+      "headers": ["ID", "Nom", "Rôle"],
+      "variant": "dark",
+      "pageSize": 5
+    }
+  },
+  {
+    "id": "btn_01",
+    "type": "button",
+    "props": {
+      "label": "Sauvegarder les modifications",
+      "variant": "success",
+      "align": "right",
+      "actionType": "custom",
+      "actionConfig": { "script": "console.log('Data saved to Wosa backend');" }
+    }
+  }
+]

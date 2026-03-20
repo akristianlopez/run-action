@@ -47,3 +47,161 @@ transition-duration: 150ms;
     50% { border-color: rgba(79, 70, 229, 0.4); }
     100% { border-color: rgba(79, 70, 229, 1); }
 }
+/* Style Outline Material */
+.m-outline-group {
+    position: relative;
+    margin-top: 0.5rem;
+}
+
+.m-outline-label {
+    position: absolute;
+    left: 0.75rem;
+    top: -0.5rem; /* À cheval sur la bordure */
+    background: white; /* Pour masquer la bordure derrière le texte */
+    padding: 0 0.25rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    transition: all 0.2s;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.m-outline-input {
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 0.5rem !important;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.m-outline-input:focus {
+    border-color: #4f46e5 !important;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1) !important;
+}
+.wosa-checkbox:checked {
+    background-color: var(--active-color) !important;
+    border-color: var(--active-color) !important;
+}
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.cm-scroller::-webkit-scrollbar {
+    width: 8px;
+}
+.cm-scroller::-webkit-scrollbar-track {
+    background: #0f172a;
+}
+.cm-scroller::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 10px;
+}
+.cm-scroller::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+}
+/* Style de la bulle d'erreur au survol dans CodeMirror */
+.cm-tooltip.cm-tooltip-cursor {
+    border: none !important;
+    background-color: transparent !important;
+}
+
+.cm-error-tooltip {
+    background: #1e293b; /* slate-800 */
+    color: #f87171;    /* red-400 */
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #7f1d1d; /* red-900 */
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+    font-size: 11px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    max-width: 300px;
+    white-space: pre-wrap;
+}
+
+/* La ligne surlignée dans l'éditeur */
+.cm-error-line {
+    background-color: rgba(239, 68, 68, 0.08) !important; /* Rouge très léger */
+    position: relative;
+}
+
+/* Optionnel : petite barre rouge verticale à gauche de la ligne en erreur */
+.cm-error-line::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background-color: #ef4444;
+}
+
+/* Style pour la console d'erreurs */
+#error-console {
+    scrollbar-width: thin; /* Pour Firefox */
+    scrollbar-color: #334155 #020617; /* Slate-700 et Slate-950 */
+}
+
+/* Pour Chrome, Edge et Safari */
+#error-console::-webkit-scrollbar {
+    width: 6px;
+}
+
+#error-console::-webkit-scrollbar-track {
+    background: #020617; /* Slate-950 */
+}
+/* Style pour les zones de résultats dans la sidebar */
+#sidebar-results::-webkit-scrollbar {
+    width: 4px; /* Très fin pour la sidebar */
+}
+
+#sidebar-results::-webkit-scrollbar-track {
+    background: transparent; 
+}
+
+#sidebar-results::-webkit-scrollbar-thumb {
+    background: #334155; /* slate-700 */
+    border-radius: 10px;
+}
+
+#sidebar-results::-webkit-scrollbar-thumb:hover {
+    background: #475569; /* slate-600 */
+}
+
+/* Version Firefox */
+#sidebar-results {
+    scrollbar-width: thin;
+    scrollbar-color: #334155 transparent;
+}
+#error-console::-webkit-scrollbar-thumb {
+    background-color: #334155; /* Slate-700 */
+    border-radius: 20px;
+}
+
+#error-console::-webkit-scrollbar-thumb:hover {
+    background-color: #475569; /* Slate-600 */
+}
+.animate-spin-once {
+    animation: spin 0.5s linear;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+#console-resizer {
+    position: relative;
+    z-index: 10;
+}
+
+#console-resizer::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 2px;
+    background: #475569; /* slate-600 */
+    border-radius: 2px;
+}
+.is-resizing iframe, 
+.is-resizing .cm-editor {
+    pointer-events: none;
+}

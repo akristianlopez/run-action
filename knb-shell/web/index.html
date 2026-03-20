@@ -3,14 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shell</title>
+    <!-- <link rel="stylesheet" href="/style.css"> -->
+    <title>KBM</title>
     <!-- Tailwind CDN nécessite une connexion internet -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Empêcher le flash blanc au chargement */
-        [v-cloak] { display: none; }
-        body { background-color: #f3f4f6; }
-    </style>
+    <!-- <script src="https://cdn.tailwindcss.com"></script>  -->
+
 </head>
 <body>
     <div id="app">
@@ -22,7 +19,7 @@
                 <div class="w-48 h-48 flex items-center justify-center animate-bounce bg-white rounded-full overflow-hidden shadow-[0_0_50px_rgba(79,70,229,0.1)] border border-indigo-50/50">
                     <img 
                         src="logo-knb.svg" 
-                        alt="Knowledge Bits" 
+                        alt="Knowledge Bits Microsevice" 
                         class="w-full h-full object-contain brightness-110 contrast-105 transition-transform duration-500 hover:scale-110" 
                     />
                 </div>
@@ -32,10 +29,10 @@
 
             <div class="text-center relative z-10">
                 <h1 class="text-2xl font-black tracking-tight text-slate-800 mb-2 drop-shadow-sm">
-                    Knowledge Bits
+                    Knowledge Bits microsevice
                 </h1>
                 <div class="flex items-center justify-center gap-2 text-slate-400 font-semibold text-xs uppercase tracking-widest">
-                    <span id="loading-status">Système en cours d'éveil</span>
+                    <span id="loading-status">Loading</span>
                     <span class="flex gap-1.5">
                         <span class="w-1.5 h-1.5 bg-indigo-300 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                         <span class="w-1.5 h-1.5 bg-indigo-300 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
@@ -49,20 +46,10 @@
             </div>
         </div>
 
-        <style>
-            @keyframes loading {
-                0% { transform: translateX(-100%); }
-                100% { transform: translateX(100%); }
-            }
-            
-            .animate-in {
-                animation-duration: 0.8s;
-                animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-            }
-        </style>
     </div>
 
     <!-- Vérifie bien que ce fichier existe dans web/src/main.js -->
     <script type="module" src="/src/main.js"></script>
+    
 </body>
 </html>

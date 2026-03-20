@@ -1,13 +1,13 @@
 package webapi
 
 import (
+	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
+	"log/slog"
+	"time"
 
 	"log"
 	"net/http"
-	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -19,109 +19,87 @@ var (
 	once           sync.Once
 )
 
+func InitDB() (*sql.DB, error) {
+	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
+	if err != nil {
+		return nil, err
+	}
+
+	// Configuration cruciale pour éviter "too many clients"
+	db.SetMaxOpenConns(30)                 // Limite stricte de connexions simultanées
+	db.SetMaxIdleConns(10)                 // Garde des connexions prêtes sous le coude
+	db.SetConnMaxLifetime(3 * time.Minute) // Évite les connexions "fantômes" trop vieilles
+
+	// Vérifie si la connexion est réellement établie
+	if err = db.Ping(); err != nil {
+		return nil, err
+	}
+
+	return db, nil
+}
+
 // Start initialise et lance le serveur avec le support Micro-frontend dynamique
 // Ajout du paramètre serviceName pour le remplacement dynamique
 func Start(serviceName string, port int) error {
 	// Initialisation de votre store existant
-	store := newAction()
+	db, err := InitDB()
+	if err != nil {
+		slog.Error(err.Error())
+		return err
+	}
+	defer db.Close()
+	store := newAction(db)
 
 	router := gin.Default()
-	router.SetTrustedProxies(nil)
+	// router.SetTrustedProxies(nil)
 
-	// 1. Middleware CORS : Crucial pour que le Shell charge ce Micro-frontend
-	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type")
+	// // 1. Middleware CORS : Crucial pour que le Shell charge ce Micro-frontend
+	// router.Use(func(c *gin.Context) {
+	// 	c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+	// 	c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	// 	c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type")
 
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-		c.Next()
-	})
-
-	// Définition de la route avec un wildcard pour capturer tous les assets
-	router.GET(fmt.Sprintf("/%s/ui/*filepath", serviceName), func(c *gin.Context) {
-		path := c.Param("filepath")
-		fullPath := filepath.Join("./ui/dist/assets", path)
-
-		// Cas spécifique : Traitement et mise en cache du remoteEntry.js
-		if strings.HasSuffix(path, "remoteEntry.js") {
-			var err error
-			once.Do(func() {
-				// On cherche le fichier dans ./ui/dist/ ou ./ui/dist/assets/ selon votre build
-				content, readErr := os.ReadFile(fullPath)
-				if readErr != nil {
-					// Tentative de secours dans /assets/ si le chemin direct échoue
-					content, readErr = os.ReadFile(filepath.Join("./ui/dist/", "remoteEntry.js"))
-				}
-
-				if readErr != nil {
-					err = readErr
-					return
-				}
-
-				// Injection dynamique du nom du service
-				modified := strings.ReplaceAll(string(content), "KNB_DYNAMIC_SERVICE_NAME", serviceName)
-				cachedRemoteJS = []byte(modified)
-				log.Printf("✅ Module Federation [%s] injecté et mis en cache", serviceName)
-			})
-
-			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "remoteEntry.js introuvable"})
-				return
-			}
-
-			serveJS(c, cachedRemoteJS, ".js")
-			return
-		}
-
-		// Cas général : Servir les autres fichiers JS (ex: __federation_expose_App.js)
-		if strings.HasSuffix(path, ".js") {
-			content, err := os.ReadFile(fullPath)
-			if err != nil {
-				c.Status(http.StatusNotFound)
-				return
-			}
-			serveJS(c, content, ".js")
-			return
-		}
-		if strings.HasSuffix(path, ".css") {
-			content, err := os.ReadFile(fullPath)
-			if err != nil {
-				c.Status(http.StatusNotFound)
-				return
-			}
-
-			serveJS(c, content, ".css")
-			return
-		}
-
-		// Par défaut, laisser Gin servir le fichier statique normalement
-		fullPath = filepath.Join("./ui/dist", path)
-		c.File(fullPath)
-	})
+	// 	if c.Request.Method == "OPTIONS" {
+	// 		c.AbortWithStatus(204)
+	// 		return
+	// 	}
+	// 	c.Next()
+	// })
 
 	// 4. Intégration de vos routes métier existantes
-	addRoutes(router, *store)
+	addRoutes(router, *store, serviceName)
 
 	log.Printf("🚀 Serveur [%s] en écoute sur le port %d", serviceName, port)
 	return router.Run(fmt.Sprintf("0.0.0.0:%d", port))
 }
 
+// func serveJS(c *gin.Context, content []byte, ext string) {
+// 	c.Header("Content-Type", "application/javascript")
+// 	c.Header("Access-Control-Allow-Origin", "*") // Indispensable pour la Fédération
+// 	c.Header("Cache-Control", "no-cache")
+
+// 	switch ext {
+// 	case ".js":
+// 		c.Header("Content-Type", "application/javascript")
+// 	case ".css":
+// 		c.Header("Content-Type", "text/css")
+// 	}
+// 	c.Data(http.StatusOK, c.GetHeader("Content-Type"), content)
+// }
+
 func serveJS(c *gin.Context, content []byte, ext string) {
-	c.Header("Content-Type", "application/javascript")
-	c.Header("Access-Control-Allow-Origin", "*") // Indispensable pour la Fédération
+	contentType := "text/javascript" // Valeur par défaut application
+
+	if ext == ".css" {
+		contentType = "text/css"
+	}
+
+	c.Header("Content-Type", contentType)
+	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Cache-Control", "no-cache")
 
-	switch ext {
-	case ".js":
-		c.Header("Content-Type", "application/javascript")
-	case ".css":
-		c.Header("Content-Type", "text/css")
-	}
-	c.Data(http.StatusOK, c.GetHeader("Content-Type"), content)
+	// On utilise la variable contentType locale
+	c.Data(http.StatusOK, contentType, content)
 }
 
 // func Start(port int) error {

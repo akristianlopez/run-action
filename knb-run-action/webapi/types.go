@@ -83,15 +83,16 @@ type BrokerInfo struct {
 } //`yaml:"default" json:"default"`
 
 type MenuItem struct {
-	Id       int64      `json:"id"`
-	Order    int        `json:"order"`
-	Icon     string     `json:"icon"`
-	Label    string     `json:"label"`
-	Proc     string     `json:"proc"`
-	Role     string     `json:"role"`
-	Text     string     `json:"text"`
-	Knb      string     `json:"knb"`
-	Children []MenuItem `json:"children"`
+	Id        int64      `json:"id"`
+	Order     int        `json:"order"`
+	Icon      string     `json:"icon"`
+	Label     string     `json:"label"`
+	Proc      string     `json:"proc"`
+	Role      string     `json:"role"`
+	Text      string     `json:"text"`
+	Knb       string     `json:"knb"`
+	Component string     `json:"component"`
+	Children  []MenuItem `json:"children"`
 }
 type MFEConfig struct {
 	Name  string     `json:"name"`  //service name

@@ -9,6 +9,7 @@ import (
 
 	"github.com/akristianlopez/action/object"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
 
 func getScreen(ctx *gin.Context, s Action) {
@@ -17,7 +18,7 @@ func getScreen(ctx *gin.Context, s Action) {
 		return
 	default:
 		payload := &RequestData{}
-		if err := ctx.BindJSON(payload); err != nil {
+		if err := ctx.ShouldBindBodyWith(payload, binding.JSON); err != nil {
 			ctx.AbortWithError(http.StatusBadRequest, err)
 			return
 		}
@@ -39,7 +40,7 @@ func runAction(ctx *gin.Context, s Action) {
 		return
 	default:
 		payload := &RequestData{}
-		if err := ctx.BindJSON(payload); err != nil {
+		if err := ctx.ShouldBindBodyWith(payload, binding.JSON); err != nil {
 			ctx.AbortWithError(http.StatusBadRequest, err)
 			return
 		}
@@ -54,14 +55,27 @@ func fetchAction(ctx *gin.Context, s Action) {
 		return
 	default:
 		payload := &RequestData{}
-		if err := ctx.BindJSON(payload); err != nil {
-			ctx.AbortWithError(http.StatusBadRequest, err)
+		if err := ctx.ShouldBindBodyWith(payload, binding.JSON); err != nil {
+			ctx.JSON(http.StatusBadRequest, ResponseData{Error: 1, Data: map[string]interface{}{"msg": fmt.Sprintf("Nsina: %s", err.Error())}})
 			return
 		}
-		res, _ := s.Fetch(ctx, *payload)
+		res, err := s.Fetch(ctx, *payload)
+		if err != nil {
+			ctx.JSON(http.StatusOK, res) //StatusFound
+			return
+		}
 		if res != nil {
 			ctx.JSON(http.StatusOK, res)
 		}
+	}
+}
+func describeObject(ctx *gin.Context, s Action) {
+	select {
+	case <-ctx.Done():
+		return
+	default:
+		res, _ := s.describe(ctx, ctx.Param("role"), ctx.Param("proc"), ctx.Param("goal"), ctx.Param("object"))
+		ctx.JSON(http.StatusOK, res)
 	}
 }
 func checkAction(ctx *gin.Context, s Action) {
@@ -69,15 +83,12 @@ func checkAction(ctx *gin.Context, s Action) {
 	case <-ctx.Done():
 		return
 	default:
-		id := ctx.Param("id")
-		table := ctx.Param("table")
-		newName := ctx.Param("name")
 		payload := &RequestData{}
-		if err := ctx.BindJSON(payload); err != nil {
+		if err := ctx.ShouldBindBodyWith(payload, binding.JSON); err != nil {
 			ctx.AbortWithError(http.StatusBadRequest, err)
 			return
 		}
-		res, _, _ := s.Check(ctx, *payload, id, table, newName)
+		res, _, _ := s.Check(ctx, *payload)
 		ctx.JSON(http.StatusOK, res)
 	}
 }
@@ -92,10 +103,6 @@ func health(ctx *gin.Context, serviceID string) {
 	})
 	// ctx.JSON(http.StatusOK, "OK")
 }
-
-// func dataHandler(ctx *gin.Context) {
-// 	ctx.JSON(http.StatusOK, "OK")
-// }
 
 func refresh(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, "OK")

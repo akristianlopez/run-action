@@ -1,6 +1,20 @@
+@import "tailwindcss"; 
+
+@source "../index.html";
+@source "./**/*.{js,ts,jsx,tsx}";
+@source "../**/*.js"; 
+@source "/app/web/**/*.js";
+@source "/app/web/**/*.html";
+@source "/web/**/*.js";
+@source "/web/**/*.html";
+
+/* @import "tailwindcss"; 
 @tailwind base;
 @tailwind components;
-@tailwind utilities;
+@tailwind utilities;  */
+
+[v-cloak] { display: none; }
+body { background-color: #f3f4f6; }
 
 /* Styles globaux personnalisés pour l'intégration Micro-frontend */
 :root {
@@ -51,3 +65,419 @@ width: 100%;
 .relative.group:hover > div {
     display: block;
 }
+    /* --- 1. CONFIGURATION DE BASE (SIDEBAR) --- */
+    #sidebar {
+        width: 256px;
+        background: white;
+        z-index: 40;
+        transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border-right: 1px solid #e2e8f0;
+    }
+
+    /* --- 2. ÉTAT MINI (96px) --- */
+    #sidebar.mini {
+        width: 56px;
+        overflow: visible !important;
+    }
+
+    #sidebar.mini nav {
+        overflow: visible !important;
+        padding-top: 10px !important;
+    }
+
+    /* Cache les éléments inutiles en mode mini */
+    #sidebar.mini > nav .sidebar-label, 
+    #sidebar.mini .service-title,
+    #sidebar.mini .service-title-container,
+    #sidebar.mini > nav > div > .menu-container > button .chevron {
+        display: none !important;
+        height: 0; margin: 0; padding: 0; overflow: hidden;
+    }
+
+    /* --- 3. ITEMS DE MENU (BOUTONS) --- */
+    .menu-container {
+        position: relative;
+        overflow: visible !important;
+        margin-bottom: 2px;
+    }
+
+    /* Style commun des boutons (Flex est la clé ici) */
+    #sidebar .menu-container button,
+    #sidebar.mini .submenu-container button {
+        display: flex !important;
+        width: 100% !important;
+        align-items: center !important;
+        text-align: left !important;
+        padding: 8px 12px !important;
+        transition: background 0.2s;
+    }
+
+    /* Ajustement hauteur en mode mini */
+    #sidebar.mini > nav > div > .menu-container > button {
+        height: 48px !important;
+        justify-content: center !important;
+        padding: 0 !important;
+    }
+
+    /* Icônes Géantes Premier Niveau */
+    #sidebar.mini > nav > div > .menu-container > button svg:not(.chevron) {
+        width: 32px !important;
+        height: 32px !important;
+        min-width: 32px !important;
+        transition: transform 0.2s;
+    }
+
+    #sidebar.mini .menu-container:hover svg:not(.chevron) {
+        transform: scale(1.1);
+        color: #4f46e5;
+    }
+
+    /* --- 4. FLYOUT & TOOLTIP --- */
+    
+    /* Flyout (Le volet qui surgit) */
+    #sidebar.mini .menu-container.flyout-active > .submenu-container {
+        display: block !important;
+        position: fixed;
+        left: 56px;
+        background: white;
+        border: 1px solid #e2e8f0;
+        box-shadow: 10px 10px 20px rgba(0,0,0,0.1);
+        border-radius: 0 8px 8px 0;
+        min-width: 220px;
+        z-index: 1000;
+        padding: 8px 4px;
+        animation: flyoutIn 0.2s ease-out;
+    }
+
+    /* Réaffichage du texte dans le Flyout */
+    #sidebar.mini .submenu-container .sidebar-label {
+        display: inline-block !important;
+        opacity: 1 !important;
+        color: #334155 !important;
+        font-size: 13px !important;
+        margin-left: 10px;
+    }
+
+    /* Tooltip au survol simple */
+    #sidebar.mini .menu-container:hover::after {
+        content: attr(data-label);
+        position: absolute;
+        left: 100%; top: 50%; transform: translateY(-50%);
+        margin-left: 15px;
+        background: #1e293b; color: white;
+        padding: 6px 12px; border-radius: 6px; font-size: 12px;
+        white-space: nowrap; z-index: 9999;
+        box-shadow: 4px 4px 15px rgba(0,0,0,0.3);
+    }
+
+    /* --- 5. LE CHEVRON (Indicateur sous-menu) --- */
+    .chevron {
+        width: 12px !important;
+        height: 12px !important;
+        min-width: 12px !important;
+        /* LE MARGIN-LEFT: AUTO EST ICI : Il pousse le chevron tout à droite */
+        margin-left: auto !important; 
+        color: #94a3b8 !important;
+        stroke-width: 2.5px !important;
+        transition: transform 0.2s;
+        flex-shrink: 0;
+    }
+
+    .chevron.rotate-90 {
+        transform: rotate(90deg);
+    }
+
+    /* Icônes normales dans les sous-menus */
+    #sidebar.mini .submenu-container svg:not(.chevron) {
+        width: 18px !important;
+        height: 18px !important;
+    }
+
+    /* --- 6. ANIMATIONS --- */
+    @keyframes flyoutIn {
+        from { opacity: 0; transform: translateX(-10px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+
+
+
+
+    /* 1. RÉAFFICHAGE DU TEXTE (Ciblage précis du span uniquement) */
+    #sidebar.mini .submenu-container span.sidebar-label,
+    #sidebar.mini .flyout-active span.sidebar-label {
+        display: inline-block !important; /* inline-block est plus stable que block ici */
+        visibility: visible !important;
+        opacity: 1 !important;
+        width: auto !important;
+        height: auto !important;
+        margin-left: 10px !important;
+        color: #334155 !important;
+        font-size: 13px !important;
+    }
+
+    /* 2. VERROUILLAGE DE SÉCURITÉ (Pour empêcher les chevrons de grossir) */
+    /* Cette règle s'assure que même si le texte réapparaît, le chevron reste petit */
+    #sidebar.mini .submenu-container .chevron,
+    #sidebar.mini .flyout-active .chevron {
+        width: 12px !important;
+        height: 12px !important;
+        min-width: 12px !important;
+        max-width: 12px !important;
+        margin-left: auto !important; /* Garde le chevron à droite */
+        display: block !important;
+    }
+
+    /* 3. VERROUILLAGE DES ICONES DANS LE FLYOUT */
+    #sidebar.mini .submenu-container svg:not(.chevron) {
+        width: 18px !important;
+        height: 18px !important;
+        min-width: 18px !important;
+    }
+
+    /* 4. ALIGNEMENT DU BOUTON DANS LE FLYOUT */
+    #sidebar.mini .submenu-container button {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        padding: 8px 12px !important;
+        height: auto !important; /* Important : laisser la hauteur s'adapter au contenu */
+    }
+    #sidebar.mini .menu-container > button.mainmenu-button .sidebar-label {
+        display: none !important;
+    }
+    #sidebar.mini .menu-container.flyout-active::after,
+    #sidebar.mini .menu-container.flyout-active::before {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+    }        
+    #sidebar.mini .menu-container.flyout-active > .submenu-container {
+        z-index: 10000 !important; /* Supérieur au 9999 de l'info-bulle */
+    }     
+
+/* --- LIGNE DE GUIDAGE GÉNÉRALE (Normal & Flyout) --- */
+    /* On cible les sous-menus qui sont ENFANTS d'un autre sous-menu */
+    .submenu-container .submenu-container {
+        border-left: 2px solid #cbd5e1; /* slate-300 */
+        transition: border-color 0.2s ease;
+        display: none; /* Caché par défaut, géré par .hidden en JS */
+    }
+
+    /* --- AJUSTEMENTS SPÉCIFIQUES AU MODE NORMAL --- */
+    #sidebar:not(.mini) .submenu-container {
+        border-left: 2px solid #cbd5e1;
+        margin-left: 1.75rem; 
+        padding-left: 0.5rem;
+    }
+
+    /* --- AJUSTEMENTS SPÉCIFIQUES AU MODE MINI (Flyout) --- */
+    /* Dans le Flyout, on réduit les marges car l'espace est précieux */
+    #sidebar.mini .submenu-container .submenu-container {
+        margin-left: 1.25rem !important; /* Moins de décalage qu'en mode large */
+        padding-left: 0.25rem !important;
+        border-left: 1.5px solid #6b828bff !important; /* Ligne un peu plus fine et claire #e2e8f0*/
+    }
+
+    /* L'effet de survol qui illumine la ligne (marche aussi en mini) */
+    .menu-container:hover > .submenu-container {
+        border-left-color: #3f8d68ff !important; /* indigo-500 #6366f1*/
+    }
+
+    /* --- ÉTAT DE VISIBILITÉ --- */
+    .submenu-container:not(.hidden) {
+        display: block !important;
+    }    
+    /* ... tes styles existants ... */
+    .btn-header-tool {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        background: rgba(79, 70, 229, 0.2); /* Indigo transparent */
+        border: 1px solid rgba(79, 70, 229, 0.4);
+        border-radius: 6px;
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        transition: all 0.2s;
+    }
+    .btn-header-tool:hover {
+        background: rgba(79, 70, 229, 0.4);
+        border-color: #6366f1;
+    }
+    [v-cloak] { display: none; }
+    body { background-color: #f3f4f6; }
+
+    @keyframes loading {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+    }
+    
+    .animate-in {
+        animation-duration: 0.8s;
+        animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Fallbacks de base pour pallier le blocage du CDN */
+    .mb-6 { margin-bottom: 1.5rem !important; }
+    .mb-8 { margin-bottom: 2rem !important; }
+    .mb-10 { margin-bottom: 2.5rem !important; }
+    .mb-12 { margin-bottom: 3.5rem !important; } 
+    .mb-16 { margin-bottom: 4rem !important; }
+    .mt-2 { margin-top: 0.5rem !important; }
+    
+    /* Padding Fallbacks */
+    .px-4 { padding-left: 1rem !important; padding-right: 1rem !important; }
+    .px-5 { padding-left: 1.25rem !important; padding-right: 1.25rem !important; }
+    .px-6 { padding-left: 1.5rem !important; padding-right: 1.5rem !important; }
+    .px-8 { padding-left: 2rem !important; padding-right: 2rem !important; }
+    .px-10 { padding-left: 2.5rem !important; padding-right: 2.5rem !important; }
+    .py-2 { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
+    .py-4 { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+    .py-5 { padding-top: 1.25rem !important; padding-bottom: 1.25rem !important; }
+    
+    /* Typographie et Couleurs */
+    .font-light { font-weight: 300 !important; }
+    .font-medium { font-weight: 500 !important; }
+    .font-bold { font-weight: 700 !important; }
+    .font-extrabold { font-weight: 800 !important; }
+    .font-black { font-weight: 900 !important; }
+    .bg-white { background-color: #ffffff !important; }
+    .text-indigo-400 { color: #818cf8 !important; }
+    .text-slate-400 { color: #94a3b8 !important; }
+    .text-blue-600 { color: #2563eb !important; }
+    .text-indigo-600 { color: #4f46e5 !important; }
+    .text-emerald-600 { color: #059669 !important; }
+    .bg-blue-50 { background-color: #eff6ff !important; }
+    .bg-indigo-50 { background-color: #eef2ff !important; }
+    .bg-emerald-50 { background-color: #ecfdf5 !important; }
+    
+    /* Layout et Flexbox */
+    .h-12 { height: 3rem !important; }
+    .h-14 { height: 3.5rem !important; }
+    .w-8 { width: 2rem !important; }
+    .h-8 { height: 2rem !important; }
+    .w-max { width: max-content !important; }
+    .inline-flex { display: inline-flex !important; }
+    .flex { display: flex !important; }
+    .items-center { align-items: center !important; }
+    .justify-center { justify-content: center !important; }
+    .justify-between { justify-content: space-between !important; }
+    .gap-2 { gap: 0.5rem !important; }
+    .gap-3 { gap: 0.75rem !important; }
+    .gap-4 { gap: 1rem !important; }
+    .gap-5 { gap: 1.25rem !important; }
+    .gap-6 { gap: 1.5rem !important; }
+    .gap-12 { gap: 3rem !important; }
+    
+    /* Arrondis et Bordures */
+    .rounded { border-radius: 0.25rem !important; }
+    .rounded-lg { border-radius: 0.5rem !important; }
+    .rounded-xl { border-radius: 0.75rem !important; }
+    .rounded-full { border-radius: 9999px !important; }
+    .rounded-2xl { border-radius: 1rem !important; }
+    .rounded-3xl { border-radius: 2rem !important; }
+    
+    /* Transitions et Hovers Fallbacks */
+    .transition-all { transition-property: all !important; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important; }
+    .transition-colors { transition-property: color, background-color, border-color !important; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important; }
+    .duration-300 { transition-duration: 300ms !important; }
+    .duration-200 { transition-duration: 200ms !important; }
+
+    /* FIX GROUP-HOVER : Simulation manuelle des classes group-hover */
+    .group:hover .group-hover\:bg-blue-600 { background-color: #2563eb !important; }
+    .group:hover .group-hover\:bg-indigo-600 { background-color: #4f46e5 !important; }
+    .group:hover .group-hover\:bg-emerald-600 { background-color: #059669 !important; }
+    .group:hover .group-hover\:text-white { color: #ffffff !important; }
+    
+    .group:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important; }
+
+    /* Ombre noire prononcée (Custom) */
+    .shadow-black { 
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.2) !important; 
+    }
+
+    /* Design Unifié des Boutons du Header */
+    .btn-header-tool {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem !important;
+        border-radius: 0.5rem !important;
+        font-size: 0.8rem !important;
+        font-weight: 600 !important;
+        text-transform: none !important; 
+        transition: all 0.2s ease !important;
+        border: 1px solid rgba(148, 163, 184, 0.1) !important;
+        background: rgba(255, 255, 255, 0.03) !important;
+        color: #94a3b8 !important;
+        cursor: pointer;
+        height: 2.25rem !important;
+    }
+
+    .btn-header-tool:hover {
+        background: rgba(129, 140, 248, 0.1) !important;
+        border-color: rgba(129, 140, 248, 0.3) !important;
+        color: #ffffff !important;
+        transform: translateY(-1px);
+    }
+
+    .btn-header-tool.logout:hover {
+        color: #f87171 !important;
+        background: rgba(248, 113, 113, 0.05) !important;
+        border-color: rgba(248, 113, 113, 0.3) !important;
+    }
+
+    .btn-header-tool svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* Amélioration spécifique du bouton "Premium" */
+    .btn-explorer {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        cursor: pointer;
+    }
+
+    .btn-explorer:hover {
+        transform: translateY(-3px) scale(1.02) !important;
+        box-shadow: 0 20px 30px -10px rgba(0, 0, 0, 0.5) !important;
+        background-color: #f8fafc !important;
+    }
+
+    @media (min-width: 640px) {
+        .sm\:flex-row { flex-direction: row !important; }
+        .sm\:items-center { align-items: center !important; }
+        .sm\:grid-cols-2 { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    }
+    @media (min-width: 768px) {
+        .md\:flex-row { flex-direction: row !important; }
+        .md\:items-center { align-items: center !important; }
+        .md\:grid-cols-2 { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+        .md\:flex { display: flex !important; }
+        .md\:p-16 { padding: 4rem !important; }
+        .md\:text-3xl { font-size: 1.875rem !important; line-height: 2.25rem !important; }
+        .md\:text-4xl { font-size: 2.25rem !important; line-height: 2.5rem !important; }
+        .md\:text-5xl { font-size: 3rem !important; line-height: 1.1 !important; }
+        .md\:text-7xl { font-size: 4.5rem !important; line-height: 1 !important; }
+    }
+
+    /* Animations */
+    @keyframes float {
+        0% { transform: translateY(0px); }
+        50% { transform: translateY(-15px); }
+        100% { transform: translateY(0px); }
+    }
+    .animate-float { animation: float 4s ease-in-out infinite; }
+
+    @keyframes spin-slow {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    .animate-spin-slow { animation: spin-slow 12s linear infinite; }
+
+

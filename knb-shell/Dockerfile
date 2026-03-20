@@ -46,7 +46,7 @@ COPY --from=frontend-builder /app/web/dist ./web/dist
 # Configuration des variables d'environnement
 ENV PORT=8080
 ENV CONSUL_ADDR=consul-server:8500
-ENV SERVICE_NAME=knb-shell
+ENV SERVICE_NAME=app
 ENV SERVICE_DOMAIN=wosa.local
 ENV CONFIG_PATH=knb/services/shell
 ENV SERVICE_KIND=swarm

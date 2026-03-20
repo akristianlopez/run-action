@@ -3,6 +3,7 @@ package webapi
 import (
 	"bytes"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	"github.com/akristianlopez/action/ast"
 	"github.com/akristianlopez/action/object"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	_ "github.com/go-sql-driver/mysql" // Import du driver MySQL/MariaDB
 	"github.com/goccy/go-json"
 	"github.com/golang-jwt/jwt/v5"
@@ -59,7 +61,7 @@ func serviceSignature(ctx *gin.Context, service, name string) ([]*ast.StructFiel
 		return nil, nil, nil
 	}
 	req := &RequestData{}
-	if err := ctx.BindJSON(req); err != nil {
+	if err := ctx.ShouldBindBodyWith(req, binding.JSON); err != nil {
 		return nil, nil, err
 	}
 	entry := IsServiceExists(microservices, service)
@@ -128,6 +130,7 @@ type security struct {
 	filter     map[string]ast.Expression
 	excluded   map[string]bool
 	context    map[string]map[string][]string
+	cmpContext map[string][]string
 	isInitMode bool
 }
 
@@ -136,7 +139,7 @@ func (sec *security) IsHandlabledField(ctx *gin.Context, table, field string) bo
 		return true
 	}
 	req := &RequestData{}
-	if err := ctx.BindJSON(req); err != nil {
+	if err := ctx.ShouldBindBodyWith(req, binding.JSON); err != nil {
 		return false
 	}
 	rw.RLock()
@@ -144,6 +147,7 @@ func (sec *security) IsHandlabledField(ctx *gin.Context, table, field string) bo
 	if _, ok := sec.excluded[strings.ToLower(fmt.Sprintf("%s.%s.%s.%s.%s", req.Role, req.Proc, req.Knowledge, table, field))]; ok {
 		return false
 	}
+
 	return true
 }
 func (sec *security) IsHandlabled(ctx *gin.Context, table, field, operation string) (bool, string) {
@@ -151,10 +155,11 @@ func (sec *security) IsHandlabled(ctx *gin.Context, table, field, operation stri
 		return true, ""
 	}
 	req := &RequestData{}
-	if err := ctx.BindJSON(req); err != nil {
-		return false, ""
+	if err := ctx.ShouldBindBodyWith(req, binding.JSON); err != nil {
+		return false, err.Error()
 	}
 	if sec.IsHandlabledField(ctx, table, field) {
+
 		rw.RLock()
 		defer rw.RUnlock()
 		if val, ok := sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", req.Role, req.Proc, req.Knowledge))]; ok {
@@ -166,9 +171,9 @@ func (sec *security) IsHandlabled(ctx *gin.Context, table, field, operation stri
 				}
 			}
 		}
-		return false, ""
+		return false, "Not authorized"
 	}
-	return false, ""
+	return false, "Not authorized"
 }
 func (sec *security) hasFilter(ctx *gin.Context, table string) bool {
 	if sec.isInitMode {
@@ -176,13 +181,25 @@ func (sec *security) hasFilter(ctx *gin.Context, table string) bool {
 	}
 
 	req := &RequestData{}
-	if err := ctx.BindJSON(req); err != nil {
+	if err := ctx.ShouldBindBodyWith(req, binding.JSON); err != nil {
 		return false
 	}
 	rw.RLock()
 	defer rw.RUnlock()
 	if _, ok := sec.filter[strings.ToLower(fmt.Sprintf("%s.%s.%s.%s", req.Role, req.Proc, req.Knowledge, table))]; ok {
 		return true
+	}
+	return false
+}
+func (sec *security) isHandlabled(role, proc, knb, table, operation string) bool {
+	if val, ok := sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, knb))]; ok {
+		if array, ok := val[strings.ToLower(table)]; ok {
+			for _, v := range array {
+				if strings.EqualFold(v, operation) {
+					return true
+				}
+			}
+		}
 	}
 	return false
 }
@@ -218,7 +235,11 @@ func (sec *security) replace(expr ast.Expression, table, newName string) ast.Exp
 }
 func (sec *security) getFilter(ctx *gin.Context, table, newName string) (ast.Expression, bool) {
 	req := &RequestData{}
-	if err := ctx.BindJSON(req); err != nil {
+	if sec.isInitMode {
+		return nil, false
+	}
+
+	if err := ctx.ShouldBindBodyWith(req, binding.JSON); err != nil {
 		return nil, false
 	}
 	rw.RLock()
@@ -245,14 +266,9 @@ func (sec *security) removeDuplicates(input []string) []string {
 	return result
 }
 
-func (sec *security) load() (bool, map[string]MFEConfig, error) {
+func (sec *security) load(db *sql.DB) (bool, map[string]MFEConfig, error) {
 	// loading of the context
 	menu := make(map[string]MFEConfig)
-	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
-	if err != nil {
-		return false, menu, fmt.Errorf("Nsina: Error when trying to retrieve the action from the database : %v", err)
-	}
-	defer db.Close()
 	sec.isInitMode = false
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	act := action.NewAction(c, db, Db_connect_params.Kind)
@@ -263,7 +279,7 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 	switch strings.ToLower(Db_connect_params.Kind) {
 	case "postgres":
 		sql = fmt.Sprintf("select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','LABEL','CONTRACT','EVENT','ROLES','ORGANIZATION','SERV_DESC') and table_catalog ='%s'", Db_connect_params.Name)
-		sqlMenu = `select o.id,o.idpere,l.label,COALESCE(o.proc,'') as process,COALESCE(p.label,'') as p_label, COALESCE(r.goal,'') as knowledge, COALESCE(r.role,'') as role, COALESCE(o.icon,'') as icon, o.noorder 
+		sqlMenu = `select o.id,o.idpere,l.label,COALESCE(o.proc,'') as process,COALESCE(p.label,'') as p_label, COALESCE(r.goal,'') as knowledge, COALESCE(r.role,'') as role, COALESCE(o.icon,'') as icon, COALESCE(r.CPNT,'') as Component, o.noorder 
 				from organization o inner join label l on (l.proc=o.proc and l.id=o.labelid)
 					inner join (select p.code,ll.label from process p inner join label ll on (p.id=ll.id and p.code=ll.proc and ll.lan='%s')) P on(o.proc=p.code)
 					left  join roles r on (o.proc=r.proc and o.id=r.id )
@@ -271,7 +287,7 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 				order by idpere,noorder `
 	case "mariadb":
 		sql = fmt.Sprintf("select table_name from information_schema.tables where upper(table_name) in ('ROLE','PROCESS','KNOWLEDGE','TRANSACTION','CONTEXT','RULE','FILTER','EXCLUDED','IDS','LAN','LABEL','CONTRACT','EVENT','ROLES','ORGANIZATION','SERV_DESC')  and table_catalog ='%s'", Db_connect_params.Name)
-		sqlMenu = `select o.id,o.idpere,l.label,COALESCE(o.proc,'') as process,COALESCE(p.label,'') as p_label, COALESCE(r.goal,'') as knowledge, COALESCE(r.role,'') as role, COALESCE(o.icon,'') as icon, noorder 
+		sqlMenu = `select o.id,o.idpere,l.label,COALESCE(o.proc,'') as process,COALESCE(p.label,'') as p_label, COALESCE(r.goal,'') as knowledge, COALESCE(r.role,'') as role, COALESCE(o.icon,'') as icon, COALESCE(r.CPNT,'') as Component, noorder 
 				from organization o inner join label l on (l.proc=o.proc and l.id=o.labelid)
 					inner join (select p.code,ll.label from process p inner join label ll on (p.id=ll.id and p.code=ll.proc and ll.lan='%s')) P on(o.proc=p.code)
 					left  join roles r on (o.proc=r.proc and o.id=r.id )
@@ -285,6 +301,7 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 	if err != nil {
 		return false, menu, err
 	}
+	defer rows.Close()
 	cpt := 0
 	for rows.Next() {
 		cpt++
@@ -309,6 +326,9 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 	if err != nil {
 		return false, menu, err
 	}
+	defer rows.Close()
+	sec.context = map[string]map[string][]string{}
+	sec.cmpContext = map[string][]string{}
 	var role, proc, goal, object, trans string
 	for rows.Next() {
 		err = rows.Scan(&role, &proc, &goal, &object, &trans)
@@ -320,9 +340,11 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 		}
 		if _, ok := sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))][strings.ToLower(object)]; !ok {
 			sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))][strings.ToLower(object)] = make([]string, 0)
+			sec.cmpContext[strings.ToLower(fmt.Sprintf("%s.%s", proc, goal))] = make([]string, 0)
 		}
 		rw.Lock()
 		sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))][strings.ToLower(object)] = append(sec.context[strings.ToLower(fmt.Sprintf("%s.%s.%s", role, proc, goal))][strings.ToLower(object)], trans)
+		sec.cmpContext[strings.ToLower(fmt.Sprintf("%s.%s", proc, goal))] = append(sec.cmpContext[strings.ToLower(fmt.Sprintf("%s.%s", proc, goal))], trans)
 		rw.Unlock()
 	}
 
@@ -333,12 +355,18 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 		}
 		rw.Unlock()
 	}
+	for key := range sec.cmpContext {
+		rw.Lock()
+		sec.cmpContext[key] = sec.removeDuplicates(sec.cmpContext[key])
+		rw.Unlock()
+	}
 
 	// load filter
 	rows, err = db.Query("SELECT R.ROLE, F.PROC, F.GOAL, F.OBJECT, F.EXPRESSSION FROM FILTER F INNER JOIN ROLES R ON (R.PROC= F.PROC AND R.GOAL=F.GOAL)")
 	if err != nil {
 		return false, menu, err
 	}
+	defer rows.Close()
 	sec.filter = make(map[string]ast.Expression)
 	for rows.Next() {
 		err = rows.Scan(&role, &proc, &goal, &object, &trans)
@@ -363,6 +391,7 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 	if err != nil {
 		return false, menu, err
 	}
+	defer rows.Close()
 	sec.excluded = make(map[string]bool)
 	for rows.Next() {
 		err = rows.Scan(&role, &proc, &goal, &object, &trans)
@@ -379,6 +408,10 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 
 	//loading menu ...
 	rows, err = db.Query("select code from lan")
+	if err != nil {
+		return false, menu, err
+	}
+	defer rows.Close()
 	code := ""
 	for rows.Next() {
 		err = rows.Scan(&code)
@@ -396,14 +429,15 @@ func (sec *security) load() (bool, map[string]MFEConfig, error) {
 		if er != nil {
 			return false, menu, er
 		}
+		defer row.Close()
 		var id, idpere int64
-		var label, process, p_label, knowledge, role, icon string
+		var label, process, p_label, knowledge, role, icon, compo string
 		var noorder int
 
 		nav := make([]menuItem, 0)
 		for row.Next() {
-			row.Scan(&id, &idpere, &label, &process, &p_label, &knowledge, &role, &icon, &noorder)
-			buildItem(&nav, id, idpere, label, process, p_label, knowledge, role, icon, noorder)
+			row.Scan(&id, &idpere, &label, &process, &p_label, &knowledge, &role, &icon, &compo, &noorder)
+			buildItem(&nav, id, idpere, label, process, p_label, knowledge, role, icon, compo, noorder)
 		}
 
 		menu[strings.ToLower(code)] = MFEConfig{Name: srvName, Label: srvLabel, Icon: srvIcon, Menu: toMenuItem(nav)}
@@ -414,15 +448,16 @@ func toMenuItem(items []menuItem) []MenuItem {
 	res := make([]MenuItem, len(items))
 	for i, item := range items {
 		res[i] = MenuItem{
-			Id:       item.Id,
-			Label:    item.Label,
-			Proc:     item.Proc,
-			Text:     item.Text,
-			Role:     item.Role,
-			Order:    item.Order,
-			Knb:      item.Knb,
-			Icon:     item.Icon,
-			Children: toMenuItem(*item.Children),
+			Id:        item.Id,
+			Label:     item.Label,
+			Proc:      item.Proc,
+			Text:      item.Text,
+			Role:      item.Role,
+			Order:     item.Order,
+			Knb:       item.Knb,
+			Icon:      item.Icon,
+			Component: item.Component,
+			Children:  toMenuItem(*item.Children),
 		}
 	}
 	return res
@@ -442,19 +477,20 @@ func findItems(items *[]menuItem, id int64) (bool, *menuItem) {
 	return false, &menuItem{Id: 0}
 }
 func buildItem(nav *[]menuItem, id, idpere int64,
-	label, process, p_label, knowledge, role, icon string, noorder int) {
+	label, process, p_label, knowledge, role, icon, compo string, noorder int) {
 	ok, item := findItems(nav, idpere)
 	if !ok && id == idpere {
 		m := menuItem{
-			Id:       id,
-			Label:    label,
-			Proc:     process,
-			Text:     p_label,
-			Role:     role,
-			Order:    noorder,
-			Knb:      knowledge,
-			Icon:     icon,
-			Children: &[]menuItem{},
+			Id:        id,
+			Label:     label,
+			Proc:      process,
+			Text:      p_label,
+			Role:      role,
+			Order:     noorder,
+			Knb:       knowledge,
+			Icon:      icon,
+			Component: compo,
+			Children:  &[]menuItem{},
 		}
 		*nav = append(*nav, m)
 		return
@@ -462,15 +498,16 @@ func buildItem(nav *[]menuItem, id, idpere int64,
 	if item.Id != 0 {
 		if o, _ := findItems(item.Children, id); !o {
 			m := menuItem{
-				Id:       id,
-				Label:    label,
-				Proc:     process,
-				Text:     p_label,
-				Role:     role,
-				Order:    noorder,
-				Knb:      knowledge,
-				Icon:     icon,
-				Children: &[]menuItem{},
+				Id:        id,
+				Label:     label,
+				Proc:      process,
+				Text:      p_label,
+				Role:      role,
+				Order:     noorder,
+				Knb:       knowledge,
+				Icon:      icon,
+				Component: compo,
+				Children:  &[]menuItem{},
 			}
 			*item.Children = append(*item.Children, m)
 		}
@@ -482,14 +519,19 @@ type Signatures struct {
 	args    []*ast.StructField
 	retType *ast.TypeAnnotation
 }
+type storeAction struct {
+	signature *Signatures
+	action    *ast.Action
+}
 type Action struct {
 	secu       *security
 	contracts  map[string]*ast.Action
 	signatures map[string]*Signatures
-	action     map[string]map[string]map[string]*ast.Action
+	action     map[string]map[string]*storeAction
 	knb        map[string]bool
-	screen     map[string]map[string]map[string]string
+	screen     map[string]map[string]string
 	Menu       *map[string]MFEConfig
+	db         *sql.DB
 }
 
 func (action *Action) getMFEConfig() map[string]MFEConfig {
@@ -497,26 +539,29 @@ func (action *Action) getMFEConfig() map[string]MFEConfig {
 }
 
 type menuItem struct {
-	Id       int64
-	Order    int
-	Icon     string
-	Label    string
-	Proc     string
-	Role     string
-	Text     string
-	Knb      string
-	Children *[]menuItem
+	Id        int64
+	Order     int
+	Icon      string
+	Label     string
+	Proc      string
+	Role      string
+	Text      string
+	Knb       string
+	Component string
+	Children  *[]menuItem
 }
 
-func newAction() *Action {
+func newAction(db *sql.DB) *Action {
+
 	s := &Action{
 		secu:       &security{},
 		contracts:  make(map[string]*ast.Action),
 		signatures: make(map[string]*Signatures),
-		action:     make(map[string]map[string]map[string]*ast.Action),
-		screen:     make(map[string]map[string]map[string]string),
+		action:     make(map[string]map[string]*storeAction),
+		screen:     make(map[string]map[string]string),
+		db:         db,
 	}
-	_, menu, err := s.secu.load()
+	_, menu, err := s.secu.load(db)
 	if err != nil {
 		slog.Error("Error at the initialization of the step", "error", err.Error())
 		os.Exit(1)
@@ -584,8 +629,24 @@ func ValidateToken(token, key string) bool {
 	}
 	return false
 }
+func (a *Action) MonitorPool() {
+	go func() {
+		for {
+			stats := a.db.Stats()
+
+			fmt.Printf("\n--- DB STATS ---\n")
+			fmt.Printf("Connexions Ouvertes : %d\n", stats.OpenConnections) // Total actuel
+			fmt.Printf("En cours d'utilisation : %d\n", stats.InUse)        // Requêtes actives
+			fmt.Printf("Inactives (Idle) : %d\n", stats.Idle)               // Prêtes dans le pool
+			fmt.Printf("Attentes (Wait) : %d\n", stats.WaitCount)           // Requêtes bloquées car pool plein
+			fmt.Printf("----------------\n")
+
+			time.Sleep(5 * time.Second)
+		}
+	}()
+}
 func (a *Action) GetInterface(ctx *gin.Context, req RequestData) (string, error) {
-	if qry, ok := a.screen[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)]; !ok {
+	if qry, ok := a.screen[strings.ToLower(req.Role)][fmt.Sprintf("%s.%s", strings.ToLower(req.Proc), strings.ToLower(req.Knowledge))]; !ok {
 		return qry, nil
 	}
 	qry := fmt.Sprintf(`Action "execute a query"()\n start RETURN SELECT ACTION.SCREEN 
@@ -593,154 +654,218 @@ func (a *Action) GetInterface(ctx *gin.Context, req RequestData) (string, error)
 				INNER JOIN PROCESS ON (PROCESS.CODE==KNOWLEDGE.PROC)
 			WHERE (KNOWLEDGE.GOAL=='%s' AND KNOWLEDGE.PROC=='%s' AND PROCESS.ROLE=='%s')\nstop`,
 		req.Knowledge, req.Proc, req.Role)
-	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
-	if err != nil {
-		return "", fmt.Errorf("Nsina: Error when trying to retrieve the screen from the database : %v", err)
-	}
-	defer db.Close()
-	act := action.NewAction(ctx, db, Db_connect_params.Kind)
+	// db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
+	// if err != nil {
+	// 	return "", fmt.Errorf("Nsina: Error when trying to retrieve the screen from the database : %v", err)
+	// }
+	// defer db.Close()
+	act := action.NewAction(ctx, a.db, Db_connect_params.Kind)
 	val, erro := act.Interpret(qry, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
 		serviceExists, serviceSignature, a.eval, emit)
 	if erro != nil {
-		return "", err
+		return "", fmt.Errorf("Too many errors : %v", erro)
 	}
 	if val == object.NULL {
 		return "", ErrNotFound
 	}
 	if rows, ok := val.(*object.SQLResult); ok {
+		defer rows.Rows.Close()
 		for rows.Rows.Next() {
 			rows.Rows.Scan(&qry)
 		}
 		if _, ok := a.screen[strings.ToLower(req.Role)]; !ok {
-			a.screen[strings.ToLower(req.Role)] = make(map[string]map[string]string)
+			a.screen[strings.ToLower(req.Role)] = map[string]string{}
 		}
-		if _, ok := a.screen[strings.ToLower(req.Role)][strings.ToLower(req.Proc)]; !ok {
-			a.screen[strings.ToLower(req.Role)][strings.ToLower(req.Proc)] = make(map[string]string)
-		}
-		if _, ok := a.screen[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)]; !ok {
-			a.screen[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)] = qry
+		if _, ok := a.screen[strings.ToLower(req.Role)][fmt.Sprintf("%s.%s", strings.ToLower(req.Proc), strings.ToLower(req.Knowledge))]; !ok {
+			a.screen[strings.ToLower(req.Role)][fmt.Sprintf("%s.%s", strings.ToLower(req.Proc), strings.ToLower(req.Knowledge))] = qry
 		}
 		return qry, nil
 	}
 	return "", ErrNotFound
 }
-func (a *Action) Run(ctx *gin.Context, req RequestData) (*ResponseData, error) {
-	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
-	if err != nil {
-		return &ResponseData{}, fmt.Errorf("Nsina: Error when trying to retrieve the action from the database : %v", err)
+func (a *Action) getDefaultValue(typeName string, val any) object.Object {
+	switch strings.ToLower(typeName) {
+	case "integer":
+		return &object.Integer{Value: val.(int64)}
+	case "float":
+		return &object.Float{Value: val.(float64)}
+	case "string":
+		return &object.String{Value: val.(string)}
+	case "boolean":
+		return &object.Boolean{Value: val.(bool)}
+	case "time":
+		v, e := time.Parse(time.TimeOnly, val.(string))
+		if e != nil {
+			return newError("%v", e.Error())
+		}
+		return &object.Time{Value: v}
+	case "date":
+		v, e := time.Parse(time.DateOnly, val.(string))
+		if e != nil {
+			return newError("%v", e.Error())
+		}
+		return &object.Date{Value: v}
+	case "datetime":
+		v, e := time.Parse(time.DateTime, val.(string))
+		if e != nil {
+			return newError("%v", e.Error())
+		}
+		return &object.Date{Value: v}
+	case "array":
+		return &object.Array{Elements: []object.Object{}}
+	case "duration":
+		return &object.Duration{Nanoseconds: 0}
+	default:
+		// traiter les cas des listes et des structures
+		return object.NULL
 	}
-	defer db.Close()
+}
+func (a *Action) traitsArgs(sig *Signatures, arguments map[string]interface{}) (map[string]object.Object, error) {
+	switch {
+	case len(sig.args) == 0 && len(arguments) == 0:
+		return make(map[string]object.Object), nil
+	case (len(sig.args) == 0 && len(arguments) > 0) || (len(sig.args) > 0 && len(sig.args) < len(arguments)):
+		return make(map[string]object.Object), errors.New("Too much arguments")
+	case len(sig.args) > 0 && len(sig.args) > len(arguments):
+		return make(map[string]object.Object), errors.New("some arguments are necessary")
+	// case len(sig.args) > 0 && len(sig.args) == len(arguments):
+	default:
+		res := make(map[string]object.Object)
+		for _, val := range sig.args {
+			if val.Type.ArrayType == nil {
+				v := a.getDefaultValue(val.Type.Type, arguments[strings.ToLower(val.Name.Value)])
+				res[strings.ToLower(val.Name.Value)] = v
+			}
+		}
+		return res, nil
+	}
+	// return make(map[string]object.Object), nil
+}
+func (a *Action) Run(ctx *gin.Context, req RequestData) (*ResponseData, error) {
+	if a.action == nil {
+		a.action = map[string]map[string]*storeAction{}
+	}
+	// db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
+	// if err != nil {
+	// 	return &ResponseData{}, fmt.Errorf("Nsina: Error when trying to retrieve the action from the database : %v", err)
+	// }
+	// defer db.Close()
+
+	// verifier que l'utilisateur peut accesseder a la connaissance
+	// avant de lancer l'execution
 	if ar, ok := req.Data["arguments"]; ok {
-		args := (ar.(map[string]interface{}))[req.Data["service"].(string)].(map[string]interface{})[req.Data["contract"].(string)].(map[string]object.Object)
-		act := action.NewAction(ctx, db, Db_connect_params.Kind)
-		if prog, ok := a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)]; !ok {
+
+		act := action.NewAction(ctx, a.db, Db_connect_params.Kind)
+		if prog, ok := a.action[strings.ToLower(req.Role)][fmt.Sprintf("%s.%s", strings.ToLower(req.Proc), strings.ToLower(req.Knowledge))]; ok && prog != nil {
 			// Execute prog
-			val := act.Execute(prog, a.secu.hasFilter, a.secu.getFilter, args, true, true,
+			args, err := a.traitsArgs(prog.signature, ar.(map[string]interface{}))
+			if err != nil {
+				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": err.Error()}}, err
+			}
+			val := act.Execute(prog.action, a.secu.hasFilter, a.secu.getFilter, args, true, true,
 				serviceExists, serviceSignature, a.eval, emit)
+			if val.Type() == object.ERROR_OBJ {
+				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": val.Inspect()}}, nil
+			}
 			return &ResponseData{Error: 0, Data: map[string]interface{}{"result": val}}, nil
 		}
-		qry := fmt.Sprintf(`Action "execute a query"()\n start RETURN SELECT ACTION.ACTION,KNOWLEDGE.REFRESHABLE
-				FROM KNOWLEDGE INNER JOIN ACTION ON (KNOWLEDGE.GOAL=ACTION.GOAL AND KNOWLEDGE.PROC=ACTION.PROC)
-					INNER JOIN PROCESS ON (PROCESS.CODE==KNOWLEDGE.PROC)
-				WHERE (KNOWLEDGE.GOAL=='%s' AND KNOWLEDGE.PROC=='%s' AND PROCESS.ROLE=='%s')\nstop`,
-			req.Knowledge, req.Proc, req.Role)
+		qry := fmt.Sprintf(`Action "execute a query"() 
+				start 
+				RETURN SELECT RULE.ACTION,KNOWLEDGE.REFRESHABLE
+					FROM KNOWLEDGE INNER JOIN RULE ON (KNOWLEDGE.GOAL==RULE.GOAL AND KNOWLEDGE.PROC==RULE.PROC)
+						INNER JOIN PROCESS ON (PROCESS.CODE==KNOWLEDGE.PROC)
+					WHERE (KNOWLEDGE.GOAL=='%s' AND KNOWLEDGE.PROC=='%s') stop`,
+			req.Knowledge, req.Proc)
 		flag := 0
 		val, erro := act.Interpret(qry, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
 			serviceExists, serviceSignature, a.eval, emit)
-		if erro != nil {
-			return &ResponseData{}, err
+		if len(erro) > 0 {
+			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": "Too many errors", "errors": erro}}, errors.New("Too many errors")
 		}
 		if val == object.NULL {
-			return &ResponseData{}, ErrNotFound
+			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": "No data found"}}, ErrNotFound
 		}
+
 		if rows, ok := val.(*object.SQLResult); ok {
+			defer rows.Rows.Close()
+			qry = ""
+			flag = 0
 			for rows.Rows.Next() {
 				rows.Rows.Scan(&qry, &flag)
 			}
-			if _, ok := a.action[strings.ToLower(req.Role)]; !ok {
-				a.action[strings.ToLower(req.Role)] = make(map[string]map[string]*ast.Action)
+			decodedBytes, err := base64.StdEncoding.DecodeString(qry)
+			if err != nil {
+				slog.Error("Erreur de décodage", "error", err)
+				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": err.Error()}}, err
 			}
-			if _, ok := a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)]; !ok {
-				a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)] = make(map[string]*ast.Action)
+			src := string(decodedBytes)
+			if len(src) < 1 {
+				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": "no rule defined"}}, nil
+			}
+			if _, ok := a.action[strings.ToLower(req.Role)]; !ok {
+				a.action[strings.ToLower(req.Role)] = map[string]*storeAction{}
+			}
+			if a.knb == nil {
+				a.knb = map[string]bool{}
 			}
 			a.knb[strings.ToLower(fmt.Sprintf("%s.%s", req.Proc, req.Knowledge))] = flag > 0
-			val, erro = act.Interpret(qry, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
+			flds, ti, err0 := act.Signature(src)
+			if len(err0) > 0 {
+				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": "Invalid rule signature", "errors": err0}}, fmt.Errorf("Invalid rule signature ('%s', '%s')", req.Knowledge, req.Proc)
+			}
+			sig := &Signatures{retType: ti, args: flds}
+			args, err1 := a.traitsArgs(sig, ar.(map[string]interface{}))
+			if err1 != nil {
+				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": err1.Error()}}, err1
+			}
+			val, erro = act.Interpret(src, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, args, true, true,
 				serviceExists, serviceSignature, a.eval, emit)
-			if flag > 0 {
-				go a.secu.load()
+			if len(erro) > 0 {
+				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": fmt.Sprintf("Too many errors occured while trying to interpret the action of '%s' from '%s'", req.Knowledge, req.Proc)}}, fmt.Errorf("Too many errors occured while trying to interpret the action of '%s' from '%s'", req.Knowledge, req.Proc)
 			}
-			if erro != nil {
-				return &ResponseData{}, fmt.Errorf("Too many errors occured while trying to interpret the action of '%s' from '%s'", req.Knowledge, req.Proc)
+			if val.Type() == object.ERROR_OBJ {
+				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": val.Inspect()}}, nil
 			}
-			if _, ok := a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)]; !ok {
-				prog, _ := act.Generate(qry, a.secu.IsHandlabled, serviceExists, serviceSignature)
-				a.action[strings.ToLower(req.Role)][strings.ToLower(req.Proc)][strings.ToLower(req.Knowledge)] = prog
+			if flag > 3 {
+				go a.secu.load(a.db)
+			}
+			if _, ok := a.action[strings.ToLower(req.Role)][fmt.Sprintf("%s.%s", strings.ToLower(req.Proc), strings.ToLower(req.Knowledge))]; !ok {
+				prog, _ := act.Generate(src, a.secu.IsHandlabled, serviceExists, serviceSignature)
+				a.action[strings.ToLower(req.Role)][fmt.Sprintf("%s.%s", strings.ToLower(req.Proc), strings.ToLower(req.Knowledge))] = &storeAction{action: prog, signature: sig}
 			}
 			return &ResponseData{Error: 0, Data: map[string]interface{}{"result": val}}, nil
 		}
 	}
-	return &ResponseData{}, ErrNotFound
+	return &ResponseData{Error: 1}, ErrNotFound
 }
+
 func (a *Action) Fetch(ctx *gin.Context, req RequestData) (*ResponseData, error) {
 	if qry, ok := req.Data["query"]; ok {
-		src := fmt.Sprintf(`Action "execute a query"()\n start RETURN %s)\nstop`, qry.(string))
-		db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
-		if err != nil {
-			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": fmt.Errorf("Nsina: Error when trying to retrieve the screen from the database : %v", err.Error())}},
-				fmt.Errorf("Nsina: Error when trying to retrieve the screen from the database : %v", err)
-		}
-		defer db.Close()
-		act := action.NewAction(ctx, db, Db_connect_params.Kind)
+		src := fmt.Sprintf(`Action "execute a query"() 
+							start 
+								RETURN (%s) 
+							stop`, qry.(string))
+		act := action.NewAction(ctx, a.db, Db_connect_params.Kind)
 		val, erro := act.Interpret(src, a.secu.IsHandlabled, a.secu.hasFilter, a.secu.getFilter, nil, true, true,
 			serviceExists, serviceSignature, a.eval, emit)
-		if erro != nil {
-			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": "Too many errors occured while trying to retrieve the query data"}}, errors.New("Too many errors occured while trying to retrieve the query data")
+		if len(erro) > 0 {
+			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": "Too many errors occured while trying to retrieve the query data", "errors": erro}}, errors.New("Too many errors occured while trying to retrieve the query data")
+		}
+		if val.Type() == object.ERROR_OBJ {
+			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": val.Inspect()}}, ErrNotFound
 		}
 		if val == object.NULL {
 			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": ErrNotFound.Error()}}, ErrNotFound
 		}
 		if rows, ok := val.(*object.SQLResult); ok {
+			defer rows.Rows.Close()
 			_, err1 := rows.Rows.Columns()
 			cols, err2 := rows.Rows.ColumnTypes()
 			if err1 != nil {
 				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": fmt.Sprintf("Nsina; %s", err1.Error())}}, fmt.Errorf("Nsina; %s", err1.Error())
 			}
 			if err2 != nil {
-
 				return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": fmt.Sprintf("Nsina; %s", err2.Error())}}, fmt.Errorf("Nsina; %s", err2.Error())
-			}
-
-			flusher, ok := ctx.Writer.(http.Flusher)
-			if ok {
-				ctx.Writer.Header().Set("Content-Type", "text/event-stream")
-				ctx.Writer.Header().Set("Cache-Control", "no-cache")
-				ctx.Writer.Header().Set("Connection", "keep-alive")
-				ctx.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-				ctx.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-				for rows.Rows.Next() {
-					args := make([]any, 0)
-					for k := range rows.Columns {
-						args = append(args, act.GetDefaultSQLValueAddress(cols[k].DatabaseTypeName()))
-					}
-					rows.Rows.Scan(args...)
-					row := make(map[string]interface{})
-					for k, val := range args {
-						row[rows.Columns[k]] = val
-					}
-					data, err := json.Marshal(row)
-					if err != nil {
-						slog.Error("Error encoding JSON", "error", err)
-						continue
-					}
-					// Write JSON followed by newline for easy parsing
-					fmt.Fprintf(ctx.Writer, "%s\n", data)
-					// Flush to send immediately
-					flusher.Flush()
-				}
-				// Optionally send a completion message
-				fmt.Fprintln(ctx.Writer, `{"status":"done"}`)
-				flusher.Flush()
-				return nil, nil
 			}
 			resp := &ResponseData{Error: 0, Data: map[string]interface{}{"result": make([]map[string]interface{}, 0)}}
 			for rows.Rows.Next() {
@@ -760,28 +885,107 @@ func (a *Action) Fetch(ctx *gin.Context, req RequestData) (*ResponseData, error)
 	}
 	return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": "Query not found"}}, ErrNotFound
 }
-func (a *Action) Check(ctx *gin.Context, req RequestData, id, table, newName string) (*ResponseData, *[]string, error) {
+func (a *Action) formType(col *sql.ColumnType) string {
+	if col == nil {
+		return ""
+	}
+	s := col.DatabaseTypeName()
+	s = strings.ReplaceAll(strings.ToLower(s), "nvarchar2", "string")
+	s = strings.ReplaceAll(s, "nvarchar", "string")
+	s = strings.ReplaceAll(s, "varchar2", "string")
+	s = strings.ReplaceAll(s, "varchar", "string")
+	s = strings.ReplaceAll(s, "ntext", "string")
+	s = strings.ReplaceAll(s, "text", "string")
+	s = strings.ReplaceAll(s, "longtext", "string")
+	s = strings.ReplaceAll(s, "mediumtext", "string")
+	s = strings.ReplaceAll(s, "number", "integer")
+	s = strings.ReplaceAll(s, "int", "integer")
+	s = strings.ReplaceAll(s, "tinyint", "integer")
+	s = strings.ReplaceAll(s, "mediumint", "integer")
+	s = strings.ReplaceAll(s, "bigint", "integer")
+	s = strings.ReplaceAll(s, "decimal", "float")
+	s = strings.ReplaceAll(s, "numeric", "float")
+	s = strings.ReplaceAll(s, "double", "float")
+	s = strings.ReplaceAll(s, "blob", "string")
+	switch s {
+	case "int2", "integer2":
+		return "Integer(5)[-32768, +32767]"
+	case "int4", "integer4":
+		return "Integer(10)[-2147483648, +2147483647]"
+	case "int8", "integer8":
+		return "Integer(19)[-9223372036854775808, +9223372036854775807]"
+	case "string":
+		if length, ok := col.Length(); ok {
+			return fmt.Sprintf("%s(%d)", s, length)
+		}
+		return s
+	}
+	return s
+}
+func (a *Action) describe(ctx *gin.Context, role, proc, knb, object string) (*ResponseData, error) {
+	flag := a.secu.isHandlabled(role, proc, knb, "information_schema.columns", "read") ||
+		a.secu.isHandlabled(role, proc, knb, "information_schema.tables", "read")
+	if !flag {
+		return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": fmt.Sprintf("not avaible for this role:'%s'", role)}}, nil
+	}
+	select {
+	case <-ctx.Done():
+		return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": "cancel by the user"}}, nil
+	default:
+		sql := fmt.Sprintf("select * from %s limit 1", object)
+		rows, err := a.db.Query(sql)
+		if err != nil {
+			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": err.Error()}}, err
+		}
+		result := make([]map[string]string, 0)
+		cols, err := rows.ColumnTypes()
+		if err != nil {
+			return &ResponseData{Error: 1, Data: map[string]interface{}{"msg": err.Error()}}, err
+		}
+		for _, col := range cols {
+			result = append(result, map[string]string{"name": col.Name(), "type": a.formType(col)})
+		}
+		return &ResponseData{Error: 1, Data: map[string]interface{}{"result": result}}, nil
+	}
+}
+func (a *Action) Check(ctx *gin.Context, req RequestData) (*ResponseData, *[]string, error) {
 	result := &ResponseData{Data: make(map[string]interface{})}
 	result.Error = 0
-	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
-	if err != nil {
-		result.Error = 1
-		result.Data["Error"] = err.Error()
-		return result, nil, err
-	}
-	defer db.Close()
-	if src, ok := req.Data["source"]; ok {
-		act := action.NewAction(ctx, db, Db_connect_params.Kind)
-		ok, err := act.Check(src.(string), id, table, newName, a.secu.IsHandlabled, serviceExists, serviceSignature)
+	// db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
+	// if err != nil {
+	// 	result.Error = 1
+	// 	result.Data["Error"] = err.Error()
+	// 	return result, nil, err
+	// }
+	// defer db.Close()
+
+	if text, ok := req.Data["source"]; ok {
+		id := req.Data["id"].(string)
+		tablename := req.Data["table"].(string)
+		newName := req.Data["name"].(string)
+		// Décodage
+		decodedBytes, err := base64.StdEncoding.DecodeString(text.(string))
+		if err != nil {
+			slog.Error("Erreur de décodage", "error", err)
+			result.Data["msg"] = err.Error()
+			return result, nil, err
+		}
+
+		// Conversion des bytes en string
+		src := string(decodedBytes)
+		act := action.NewAction(ctx, a.db, Db_connect_params.Kind)
+		ok, erro := act.Check(src, id, tablename,
+			newName, a.secu.IsHandlabled, serviceExists, serviceSignature)
 		if ok {
 			return result, nil, nil
 		}
 		result.Error = 1
-		result.Data["Error"] = err
-		return result, &err, nil
+		result.Data["msg"] = "Too many errors"
+		result.Data["errors"] = erro
+		return result, &erro, nil
 	}
 	result.Error = 1
-	result.Data["Error"] = ErrNotFound.Error()
+	result.Data["msg"] = ErrNotFound.Error()
 	//ctx context.Context, db *sql.DB, dbname string
 	return result, nil, ErrNotFound
 }
@@ -800,12 +1004,12 @@ func (a *Action) getSignature(ctx *gin.Context, proc, goal, role, srv, name stri
 	// check if the req allows this consumer to access to the contract
 	// if not return nil, nil, else load the action source code attached to the public contract
 	// and extracts the signature.
-	db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("Nsina: Error when trying to connect to the database : %v", err)
-	}
-	act := action.NewAction(ctx, db, Db_connect_params.Kind)
-	defer db.Close()
+	// db, err := sql.Open(Db_connect_params.Kind, getConnectionString())
+	// if err != nil {
+	// 	return nil, nil, nil, fmt.Errorf("Nsina: Error when trying to connect to the database : %v", err)
+	// }
+	// defer db.Close()
+	act := action.NewAction(ctx, a.db, Db_connect_params.Kind)
 	src, err := a.getContractText(contract, proc, goal, role, act)
 	if err != nil {
 		return nil, nil, nil, err
@@ -834,6 +1038,7 @@ func (a *Action) getContractText(name, proc, goal, role string, act *action.Acti
 	}
 	if qry, ok := val.(*object.SQLResult); ok {
 		src := ""
+		defer qry.Rows.Close()
 		for qry.Rows.Next() {
 			qry.Rows.Scan(&src)
 		}
@@ -941,7 +1146,7 @@ func (a *Action) eval(ctx *gin.Context, srv, name string, args map[string]object
 			return newError("Invalid context"), false
 		}
 		payload := &RequestData{}
-		if err := ctx.BindJSON(payload); err != nil {
+		if err := ctx.ShouldBindBodyWith(payload, binding.JSON); err != nil {
 			return newError("Error %v", err), false
 		}
 		// check if the request data contains the reference to the contract

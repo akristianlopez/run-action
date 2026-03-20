@@ -124,11 +124,11 @@ func main() {
 			}
 			// slog.Info("Token récupéré pour injection", "token_present", token != "")
 			// Injection d'un script global pour que le main.js puisse lire le token sans fetch
-			scriptInjection := fmt.Sprintf("<script>window.__KNB_TOKEN__ = '%s';</script>", token)
-			modified := strings.Replace(string(content), "</head>", scriptInjection+"</head>", 1)
+			// scriptInjection := fmt.Sprintf("<script>window.__KNB_TOKEN__ = '%s';</script>", token)
+			// modified := strings.Replace(string(content), "</head>", scriptInjection+"</head>", 1)
 
 			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte(modified))
+			w.Write([]byte(content))
 			return
 		}
 
@@ -152,10 +152,26 @@ func main() {
 			w.Write([]byte(modified))
 			return
 		}
+		if strings.HasSuffix(r.URL.Path, "style.css") {
+			// filePath := filepath.Join(webDir, "remoteEntry.js")
+			filePath := filepath.Join(webDir, "assets", "style.css")
+			content, err := os.ReadFile(filePath)
+			if err != nil {
+				slog.Warn("Fichier style.css manquant sur le disque", "path", filePath)
+				fs.ServeHTTP(w, r)
+				return
+			}
 
+			w.Header().Set("Content-Type", "text/css")
+			w.Write([]byte(content))
+			return
+		}
 		// Pour les autres fichiers JS, on force le type MIME si nécessaire
 		if strings.HasSuffix(r.URL.Path, ".js") {
 			w.Header().Set("Content-Type", "application/javascript")
+		}
+		if strings.HasSuffix(r.URL.Path, ".css") {
+			w.Header().Set("Content-Type", "text/css")
 		}
 
 		fs.ServeHTTP(w, r)
